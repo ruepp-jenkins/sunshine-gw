@@ -135,3 +135,37 @@ func TestParseDeleted(t *testing.T) {
 		t.Errorf("parseDeleted = %d, %v; want 0, false", n, ok)
 	}
 }
+
+// Docker sets the iptables filter FORWARD chain to policy drop, and iptables-nft makes it
+// visible as `ip filter/FORWARD`. That case belongs to the FORWARD-Policy check, which also
+// knows whether our accept in DOCKER-USER is in place - reporting it here too warned twice
+// about one already handled situation. A real third-party firewall must still be reported.
+func TestParseForeignForwardDrops(t *testing.T) {
+	const chains = `{"nftables":[
+	{"metainfo":{"version":"1.1.1","json_schema_version":1}},
+	{"chain":{"family":"ip","table":"filter","name":"FORWARD","handle":2,"type":"filter","hook":"forward","prio":0,"policy":"drop"}},
+	{"chain":{"family":"ip6","table":"filter","name":"FORWARD","handle":3,"type":"filter","hook":"forward","prio":0,"policy":"drop"}},
+	{"chain":{"family":"ip","table":"filter","name":"DOCKER-USER","handle":6}},
+	{"chain":{"family":"ip","table":"filter","name":"SUNSHINE-GW","handle":7}},
+	{"chain":{"family":"inet","table":"sunshine_gw","name":"forward","handle":4,"type":"filter","hook":"forward","prio":-10,"policy":"accept"}},
+	{"chain":{"family":"inet","table":"sunshine_gw_guard","name":"input","handle":5,"type":"filter","hook":"input","prio":-10,"policy":"accept"}},
+	{"chain":{"family":"inet","table":"firewalld","name":"filter_FORWARD","handle":8,"type":"filter","hook":"forward","prio":10,"policy":"drop"}},
+	{"chain":{"family":"inet","table":"eigenbau","name":"fwd","handle":9,"type":"filter","hook":"forward","prio":0,"policy":"accept"}},
+	{"chain":{"family":"inet","table":"eigenbau","name":"in","handle":10,"type":"filter","hook":"input","prio":0,"policy":"drop"}}
+	]}`
+
+	got := parseForeignForwardDrops([]byte(chains))
+	want := []string{"inet firewalld/filter_FORWARD"}
+	if len(got) != len(want) || (len(got) > 0 && got[0] != want[0]) {
+		t.Errorf("parseForeignForwardDrops = %v, want %v", got, want)
+	}
+}
+
+func TestParseForeignForwardDropsSurvivesGarbage(t *testing.T) {
+	if got := parseForeignForwardDrops([]byte("kein JSON")); got != nil {
+		t.Errorf("= %v, want nil", got)
+	}
+	if got := parseForeignForwardDrops([]byte(`{"nftables":[]}`)); got != nil {
+		t.Errorf("= %v, want nil", got)
+	}
+}

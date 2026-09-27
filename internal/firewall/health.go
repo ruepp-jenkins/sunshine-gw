@@ -97,26 +97,38 @@ func (m *Manager) Health(st config.State) []Check {
 	return checks
 }
 
-// foreignForwardDrops finds base chains of other tables that drop in the forward hook.
-// An accept in our table does not save us from those: every table is evaluated for the
-// hook and a single drop wins.
+// foreignForwardDrops finds base chains of OTHER firewalls that drop in the forward hook -
+// firewalld, ufw, a hand-written table. An accept in our own table does not save us from
+// those: every table is evaluated for the hook and a single drop wins.
+//
+// What this must not report is `ip filter/FORWARD`. That is the chain Docker sets to policy
+// drop, it is reached through iptables rather than a table of its own, and it is exactly
+// what the "FORWARD-Policy" check above is about - including whether our accept in
+// DOCKER-USER is in place. Reporting it here as well warned a second time about a case that
+// is already handled, which reads as if something were wrong.
 func (m *Manager) foreignForwardDrops() []string {
 	res := m.run("nft", "", "-j", "list", "chains")
 	if res.err != nil {
 		return nil
 	}
+	return parseForeignForwardDrops([]byte(res.out))
+}
+
+type nftChain struct {
+	Family string `json:"family"`
+	Table  string `json:"table"`
+	Name   string `json:"name"`
+	Hook   string `json:"hook"`
+	Policy string `json:"policy"`
+}
+
+func parseForeignForwardDrops(jsonOut []byte) []string {
 	var dump struct {
 		Nftables []struct {
-			Chain *struct {
-				Family string `json:"family"`
-				Table  string `json:"table"`
-				Name   string `json:"name"`
-				Hook   string `json:"hook"`
-				Policy string `json:"policy"`
-			} `json:"chain"`
+			Chain *nftChain `json:"chain"`
 		} `json:"nftables"`
 	}
-	if err := json.Unmarshal([]byte(res.out), &dump); err != nil {
+	if err := json.Unmarshal(jsonOut, &dump); err != nil {
 		return nil
 	}
 	var out []string
@@ -128,9 +140,18 @@ func (m *Manager) foreignForwardDrops() []string {
 		if c.Table == TableName || c.Table == GuardTableName {
 			continue
 		}
+		if isIptablesForward(c) {
+			continue
+		}
 		out = append(out, fmt.Sprintf("%s %s/%s", c.Family, c.Table, c.Name))
 	}
 	return out
+}
+
+// isIptablesForward recognises the filter FORWARD chain that iptables-nft presents to the
+// kernel - Docker's doing, and the subject of the FORWARD-Policy check.
+func isIptablesForward(c *nftChain) bool {
+	return (c.Family == "ip" || c.Family == "ip6") && c.Table == "filter" && c.Name == "FORWARD"
 }
 
 func (m *Manager) guardLoaded() bool {

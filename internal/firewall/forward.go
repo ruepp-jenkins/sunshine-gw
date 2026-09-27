@@ -78,16 +78,19 @@ func (m *Manager) clearForwardAccept() error {
 	return m.run("iptables", "", "-w", "5", "-F", iptChain).err
 }
 
-// ForwardAcceptActive reports whether our accept rules are currently installed.
+// ForwardAcceptActive reports whether the forward permission is really in effect: the
+// chain has to carry rules AND be jumped to from DOCKER-USER. Checking only the rules
+// would report a chain nobody reaches as working - and since this is what silences the
+// warning about Docker's FORWARD policy, a green light here has to mean it.
 func (m *Manager) ForwardAcceptActive() bool {
 	if !m.DockerUserPresent() {
 		return false
 	}
 	res := m.run("iptables", "", "-w", "5", "-S", iptChain)
-	if res.err != nil {
+	if res.err != nil || !strings.Contains(res.out, "-A "+iptChain) {
 		return false
 	}
-	return strings.Contains(res.out, "-A "+iptChain)
+	return m.run("iptables", "", "-w", "5", "-C", dockerUserChain, "-j", iptChain).err == nil
 }
 
 func forwardRules(st config.State) [][]string {
