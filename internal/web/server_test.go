@@ -83,8 +83,15 @@ func TestPasswordHashing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(hash, "pbkdf2-sha256$") {
+	if !strings.HasPrefix(hash, "pbkdf2-sha256.") {
 		t.Errorf("unerwartetes Hash-Format: %q", hash)
+	}
+	// The hash goes into a .env file that Docker Compose also reads for interpolation.
+	// A "$" in there is taken as a variable reference and replaced by a blank string, so
+	// the container would receive a truncated hash and every login would fail silently.
+	// Same for characters that would need quoting in YAML or a shell.
+	if !regexp.MustCompile(`^[A-Za-z0-9._-]+$`).MatchString(hash) {
+		t.Errorf("Hash enthaelt Zeichen, die in .env, YAML oder Shell interpretiert werden: %q", hash)
 	}
 	if !VerifyPassword(hash, "streng-geheim-123") {
 		t.Error("korrektes Passwort wurde abgelehnt")
@@ -104,6 +111,32 @@ func TestPasswordHashing(t *testing.T) {
 	}
 	if _, err := HashPassword("kurz"); err == nil {
 		t.Error("zu kurzes Passwort wurde akzeptiert")
+	}
+}
+
+// The gateway must refuse to start on an unusable hash instead of answering every login
+// with 401. The message for a "$" in the value names the actual cause, because that is
+// what Compose's interpolation leaves behind.
+func TestValidateHash(t *testing.T) {
+	good, err := HashPassword("streng-geheim-123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateHash(good); err != nil {
+		t.Errorf("gueltiger Hash abgelehnt: %v", err)
+	}
+	for _, bad := range []string{"", "   ", "kaputt", "pbkdf2-sha256.1.AAAA.AAAA", "pbkdf2-sha256.210000.AAAA"} {
+		if err := ValidateHash(bad); err == nil {
+			t.Errorf("ValidateHash(%q) = nil, erwartet ein Fehler", bad)
+		}
+	}
+	// A hash mangled by Compose, i.e. the old PHC-style format.
+	err = ValidateHash("pbkdf2-sha256$210000$21Mcdc8CGua/IqLkg/5VOw$")
+	if err == nil {
+		t.Fatal("Hash im alten $-Format wurde akzeptiert")
+	}
+	if !strings.Contains(err.Error(), "Compose") {
+		t.Errorf("Meldung nennt die Ursache nicht: %v", err)
 	}
 }
 

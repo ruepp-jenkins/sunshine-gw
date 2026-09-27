@@ -9,7 +9,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -61,6 +60,12 @@ func main() {
 	if strings.TrimSpace(hash) == "" {
 		logger.Fatalf("GW_PASSWORD_HASH ist nicht gesetzt. Hash erzeugen mit:\n" +
 			"  docker compose run --rm sunshine-gw hash-password")
+	}
+	// Checked at startup rather than at the first login: an unusable hash would otherwise
+	// answer every attempt with 401 and never say why.
+	if err := web.ValidateHash(hash); err != nil {
+		logger.Fatalf("GW_PASSWORD_HASH ist unbrauchbar (%v).\n"+
+			"  Neu erzeugen mit: docker compose run --rm sunshine-gw hash-password", err)
 	}
 
 	fw := firewall.New(evlog)
@@ -164,16 +169,13 @@ func printRuleset(args []string) error {
 
 func hashPassword(args []string) error {
 	var password string
-	switch {
-	case len(args) > 0:
+	if len(args) > 0 {
 		password = args[0]
-	default:
-		fmt.Fprintln(os.Stderr, "Passwort eingeben (wird sichtbar) und mit Enter abschliessen:")
-		b, err := io.ReadAll(io.LimitReader(os.Stdin, 4096))
-		if err != nil {
+	} else {
+		var err error
+		if password, err = readPassword(); err != nil {
 			return err
 		}
-		password = strings.TrimRight(string(b), "\r\n")
 	}
 	hash, err := web.HashPassword(password)
 	if err != nil {

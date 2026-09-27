@@ -17,14 +17,26 @@ import (
 )
 
 // The UI decides what is reachable from the internet, so it gets a password. The hash
-// format is self-describing: pbkdf2-sha256$<iterations>$<salt>$<key>, both parts
-// base64. PBKDF2-HMAC-SHA256 is implemented here to keep the binary dependency-free.
+// format is self-describing: pbkdf2-sha256.<iterations>.<salt>.<key>, salt and key in
+// URL-safe base64. PBKDF2-HMAC-SHA256 is implemented here to keep the binary
+// dependency-free.
+//
+// Separator and alphabet are deliberately not the usual PHC "$" with standard base64.
+// This value lives in a .env file that Docker Compose also reads for interpolation, and
+// Compose treats "$word" inside it as a variable reference: it warns once and substitutes
+// a blank string, so the container receives a truncated hash and every login fails for no
+// visible reason. With "." as the separator and URL-safe base64 the whole hash matches
+// [A-Za-z0-9._-], which needs no quoting in .env, in YAML or in a shell.
 const (
 	hashPrefix = "pbkdf2-sha256"
+	hashSep    = "."
 	iterations = 210000
 	keyLen     = 32
 	saltLen    = 16
 )
+
+// hashEncoding avoids "+" and "/" for the same reason the separator is not "$".
+var hashEncoding = base64.RawURLEncoding
 
 func HashPassword(password string) (string, error) {
 	if len(password) < 8 {
@@ -35,26 +47,52 @@ func HashPassword(password string) (string, error) {
 		return "", err
 	}
 	key := pbkdf2SHA256([]byte(password), salt, iterations, keyLen)
-	return fmt.Sprintf("%s$%d$%s$%s", hashPrefix, iterations,
-		base64.RawStdEncoding.EncodeToString(salt),
-		base64.RawStdEncoding.EncodeToString(key)), nil
+	return strings.Join([]string{
+		hashPrefix,
+		strconv.Itoa(iterations),
+		hashEncoding.EncodeToString(salt),
+		hashEncoding.EncodeToString(key),
+	}, hashSep), nil
+}
+
+// ValidateHash reports why a stored hash is unusable, so the gateway can refuse to start
+// with a clear message instead of answering every login with 401 forever.
+func ValidateHash(hash string) error {
+	if strings.TrimSpace(hash) == "" {
+		return fmt.Errorf("leer")
+	}
+	if _, _, _, err := parseHash(hash); err != nil {
+		return err
+	}
+	return nil
+}
+
+func parseHash(hash string) (iter int, salt, key []byte, err error) {
+	parts := strings.Split(hash, hashSep)
+	if len(parts) != 4 || parts[0] != hashPrefix {
+		if strings.Contains(hash, "$") {
+			return 0, nil, nil, fmt.Errorf("enthaelt \"$\" - Docker Compose ersetzt so etwas in .env " +
+				"durch einen Leerstring; Hash neu erzeugen mit \"hash-password\"")
+		}
+		return 0, nil, nil, fmt.Errorf("Format nicht erkannt, erwartet %s%s<Runden>%s<Salt>%s<Key>",
+			hashPrefix, hashSep, hashSep, hashSep)
+	}
+	iter, err = strconv.Atoi(parts[1])
+	if err != nil || iter < 1000 {
+		return 0, nil, nil, fmt.Errorf("Rundenzahl %q ist unbrauchbar", parts[1])
+	}
+	if salt, err = hashEncoding.DecodeString(parts[2]); err != nil || len(salt) == 0 {
+		return 0, nil, nil, fmt.Errorf("Salt ist kein base64")
+	}
+	if key, err = hashEncoding.DecodeString(parts[3]); err != nil || len(key) == 0 {
+		return 0, nil, nil, fmt.Errorf("Key ist kein base64")
+	}
+	return iter, salt, key, nil
 }
 
 func VerifyPassword(hash, password string) bool {
-	parts := strings.Split(hash, "$")
-	if len(parts) != 4 || parts[0] != hashPrefix {
-		return false
-	}
-	iter, err := strconv.Atoi(parts[1])
-	if err != nil || iter < 1000 {
-		return false
-	}
-	salt, err := base64.RawStdEncoding.DecodeString(parts[2])
+	iter, salt, want, err := parseHash(hash)
 	if err != nil {
-		return false
-	}
-	want, err := base64.RawStdEncoding.DecodeString(parts[3])
-	if err != nil || len(want) == 0 {
 		return false
 	}
 	got := pbkdf2SHA256([]byte(password), salt, iter, len(want))

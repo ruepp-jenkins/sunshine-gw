@@ -55,7 +55,9 @@ $EDITOR .env            # GW_LISTEN auf die LAN-Adresse dieser Maschine setzen
 # 3. Image holen und Passwort setzen
 docker compose pull     # oder: docker compose build  (baut inkl. Testsuite lokal)
 docker compose run --rm sunshine-gw hash-password
-# ausgegebenen Hash nach GW_PASSWORD_HASH in .env kopieren
+# Passwort wird zweimal abgefragt und nicht angezeigt; ausgegebene Zeile nach
+# GW_PASSWORD_HASH in .env kopieren. Fuer ein Skript geht auch:
+#   printf '%s' 'geheim' | docker compose run --rm -T sunshine-gw hash-password
 
 # 4. starten
 docker compose up -d
@@ -107,6 +109,19 @@ Das Web-Interface hat genau eine Seite:
   Netfilter-Kette vorbei; messbar nur unter Last, bei Problemen einfach wieder aus.
 * **Zaehler und Pruefungen** - zeigen, ob Pakete ankommen und ob die Voraussetzungen
   am Host stimmen (ip_forward, FORWARD-Policy, conntrack, Erreichbarkeit des Ziels).
+
+## Passwort und Hash-Format
+
+`hash-password` erzeugt `pbkdf2-sha256.<Runden>.<Salt>.<Key>` mit 210000 Runden und
+URL-sicherem base64. Separator und Alphabet sind bewusst nicht das ueblichere
+PHC-Format mit `$` und Standard-base64: `.env` wird von Docker Compose auch zur
+Variablen-Interpolation gelesen, und `$irgendwas` darin gilt als Variablenreferenz —
+Compose warnt einmal und setzt einen Leerstring ein. Der Container bekaeme einen
+abgeschnittenen Hash, und jede Anmeldung wuerde ohne erkennbaren Grund scheitern. So wie
+es jetzt ist, passt der Hash in `.env`, YAML und Shell ohne Anfuehrungszeichen.
+
+Ein unbrauchbarer Hash laesst das Gateway beim Start mit Begruendung abbrechen, statt
+jeden Anmeldeversuch stumm mit 401 zu beantworten.
 
 ## Verifikation
 
