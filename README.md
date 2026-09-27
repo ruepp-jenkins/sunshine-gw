@@ -53,7 +53,7 @@ cp .env.example .env
 $EDITOR .env            # GW_LISTEN auf die LAN-Adresse dieser Maschine setzen
 
 # 3. Image holen und Passwort setzen
-docker compose pull     # oder: docker compose build  (baut inkl. Testsuite lokal)
+docker compose pull     # oder: make image  (baut lokal, mit Testsuite im Build)
 docker compose run --rm sunshine-gw hash-password
 # Passwort wird zweimal abgefragt und nicht angezeigt; ausgegebene Zeile nach
 # GW_PASSWORD_HASH in .env kopieren. Fuer ein Skript geht auch:
@@ -66,6 +66,11 @@ docker compose logs -f
 
 Aktualisieren spaeter: `docker compose pull && docker compose up -d`. Jenkins baut
 `ruepp/sunshine-gw` fuer amd64 und arm64, `docker pull` waehlt die passende Architektur.
+
+`docker-compose.yml` hat bewusst keinen `build:`-Abschnitt: mit einem solchen wuerde
+compose bauen statt zu ziehen, sobald das Image lokal fehlt - auf dem Gateway, das weder
+die Quellen noch eine Go-Installation hat, ist das die falsche Voreinstellung. Lokal bauen
+geht mit `make image`.
 
 Web-Interface dann auf `http://<GW_LISTEN>` - Benutzer aus `GW_USER`, Passwort das
 gerade gehashte. Dort Zieladresse eintragen, speichern, einschalten.

@@ -1,8 +1,12 @@
 services:
   sunshine-gw:
-    # Published multi-arch by Jenkins, so `docker compose pull` is the normal update path.
-    # `build: .` stays for a local checkout: compose builds only when the image is missing,
-    # or when asked with `docker compose up --build`.
+    # Published multi-arch by Jenkins; `docker compose pull` is the update path and
+    # `docker compose up -d` fetches the image on its own when it is missing.
+    #
+    # Deliberately no `build:` section: with one present, compose would build from source
+    # instead of pulling whenever the image is absent locally - on the gateway, which has
+    # neither the sources nor a Go toolchain, that is the wrong default. A local build is
+    # `make image`, which uses the Dockerfile directly.
     image: ruepp/sunshine-gw:latest
     container_name: sunshine-gw
     # The container shares the host's network stack: the FRITZ!Box port forward points

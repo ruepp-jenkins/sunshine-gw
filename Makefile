@@ -1,8 +1,9 @@
-BIN := gateway
+BIN   := gateway
+IMAGE := ruepp/sunshine-gw:latest
 GO  := docker run --rm -v "$(CURDIR)":/src -w /src --user "$$(id -u):$$(id -g)" \
         -e HOME=/tmp -e GOCACHE=/tmp/gocache golang:1 go
 
-.PHONY: test vet build image up down logs restart selftest hash ruleset check-chart clean
+.PHONY: test vet build image pull up down logs restart selftest hash ruleset check-chart clean
 
 test:            ## Unit-Tests, wie in der CI mit Race-Detector
 	$(GO) test -race -count=1 ./...
@@ -13,10 +14,13 @@ vet:
 build: vet test   ## statisches Binary nach ./$(BIN)
 	$(GO) build -trimpath -ldflags "-s -w" -o $(BIN) ./cmd/gateway
 
-image:            ## Container-Image bauen
-	docker compose build
+image:            ## Image lokal bauen (mit Testsuite im Build), Tag wie in docker-compose.yml
+	docker build -t $(IMAGE) .
 
-up: image         ## starten
+pull:             ## von Jenkins veroeffentlichtes Image holen
+	docker compose pull
+
+up:               ## starten; holt das Image selbst, wenn es fehlt
 	docker compose up -d
 
 down:             ## stoppen (entfernt auch die Weiterleitung)
