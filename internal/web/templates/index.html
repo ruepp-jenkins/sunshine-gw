@@ -1,0 +1,156 @@
+{{define "index.html" -}}
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Sunshine Gateway</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header>
+  <h1>Sunshine Gateway</h1>
+  <span id="pill" class="pill {{if .Status.Enabled}}on{{else}}off{{end}}">
+    {{if .Status.Enabled}}Weiterleitung AN{{else}}Weiterleitung AUS{{end}}
+  </span>
+</header>
+
+{{if .Message}}<p class="flash ok">{{.Message}}</p>{{end}}
+{{if .Error}}<p class="flash err">{{.Error}}</p>{{end}}
+
+<section class="card">
+  <div class="path">
+    <span class="hop">Internet</span><span class="arrow">&rarr;</span>
+    <span class="hop">FRITZ!Box</span><span class="arrow">&rarr;</span>
+    <span class="hop self">{{if .Status.GatewayIP}}{{.Status.GatewayIP}}{{else}}Gateway{{end}}<small>dieses Gateway</small></span>
+    <span class="arrow" id="last-arrow">{{if .Status.Enabled}}&rarr;{{else}}&#10007;{{end}}</span>
+    <span class="hop {{if not .Status.Enabled}}dim{{end}}">{{if .Status.Target}}{{.Status.Target}}{{else}}kein Ziel{{end}}<small>Sunshine</small></span>
+  </div>
+
+  <form method="post" action="/toggle" class="toggle">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <input type="hidden" name="enable" value="{{if .Status.Enabled}}0{{else}}1{{end}}">
+    <button type="submit" class="{{if .Status.Enabled}}danger{{else}}primary{{end}}"
+      {{if and (not .Status.Enabled) (not .Status.Target)}}disabled title="Erst eine Zieladresse speichern"{{end}}>
+      {{if .Status.Enabled}}Jetzt abschalten{{else}}Weiterleitung einschalten{{end}}
+    </button>
+  </form>
+
+  <dl class="facts">
+    <div><dt>Regelwerk im Kernel</dt><dd id="tableloaded">{{if .Status.TableLoaded}}geladen{{else}}nicht geladen{{end}}</dd></div>
+    <div><dt>Aktive Verbindungen</dt><dd id="flows">{{if lt .Status.ActiveFlows 0}}unbekannt{{else}}{{.Status.ActiveFlows}}{{end}}</dd></div>
+    <div><dt>Naechste Abschaltung</dt><dd id="nextoff">{{if .Status.NextOff}}{{.Status.NextOff}} <span class="muted">(in {{.Status.NextOffIn}})</span>{{else}}keine{{end}}</dd></div>
+    <div><dt>Eingeschaltet seit</dt><dd id="since">{{if .Status.EnabledSince}}{{.Status.EnabledSince}}{{else}}&ndash;{{end}}</dd></div>
+  </dl>
+</section>
+
+<section class="card">
+  <h2>Pruefungen</h2>
+  <ul class="checks" id="checks">
+    {{range .Status.Checks}}
+    <li class="{{.Level}}"><span class="dot"></span><strong>{{.Name}}</strong><span>{{.Message}}</span></li>
+    {{end}}
+  </ul>
+</section>
+
+<section class="card">
+  <h2>Zaehler</h2>
+  <p class="muted">Kommt Traffic an, laufen diese Zahlen hoch. Die Weiterleitung selbst passiert im
+  Kernel &ndash; dieser Prozess sieht kein einziges Paket.</p>
+  <table class="counters">
+    <thead><tr><th>Regel</th><th>Chain</th><th class="r">Pakete</th><th class="r">Bytes</th></tr></thead>
+    <tbody id="counters">
+      {{range .Status.Counters}}
+      <tr><td>{{.Label}}</td><td>{{.Chain}}</td><td class="r">{{num .Packets}}</td><td class="r">{{bytes .Bytes}}</td></tr>
+      {{else}}
+      <tr><td colspan="4" class="muted">keine Regeln geladen</td></tr>
+      {{end}}
+    </tbody>
+  </table>
+</section>
+
+<section class="card">
+  <h2>Einstellungen</h2>
+  <form method="post" action="/config" class="settings">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+
+    <label>Zieladresse (Sunshine)
+      <input type="text" name="target" value="{{.Status.Target}}" placeholder="10.10.10.5"
+             inputmode="numeric" pattern="^$|^(\d{1,3}\.){3}\d{1,3}$">
+      <small>IPv4 des Rechners, auf dem Sunshine laeuft.</small>
+    </label>
+
+    <label>Taegliche Abschaltung
+      <input type="time" name="dailyOffTime" value="{{.Status.DailyOffTime}}">
+      <small>Leer lassen schaltet den Zeitplan ab. Greift jeden Tag zu dieser Uhrzeit.</small>
+    </label>
+
+    <label>Zeitzone
+      <input type="text" name="timezone" value="{{.Status.Timezone}}" placeholder="Europe/Berlin">
+    </label>
+
+    <label>TCP-Ports
+      <input type="text" name="tcpPorts" value="{{.Status.TCPPorts}}">
+      <small>Sunshine-Standard: 47984, 47989, 48010. Ohne 47990 &ndash; Sunshines eigenes Web-UI
+      gehoert nicht ins Internet.</small>
+    </label>
+
+    <label>UDP-Ports
+      <input type="text" name="udpPorts" value="{{.Status.UDPPorts}}">
+      <small>Sunshine-Standard: 47998-48000 (Video, Audio, Control) und 48002.</small>
+    </label>
+
+    <fieldset>
+      <legend>Netz des Gateways</legend>
+      <div class="row">
+        <label>Eigene IP
+          <input type="text" name="gatewayIP" value="{{.Status.GatewayIP}}">
+          <small>Hierauf zeigt die Portfreigabe der FRITZ!Box.</small>
+        </label>
+        <label>Interface
+          <input type="text" name="iface" value="{{.Status.Iface}}">
+        </label>
+        <label>LAN-Netz
+          <input type="text" name="lanCIDR" value="{{.Status.LANCIDR}}" placeholder="10.10.10.0/24">
+        </label>
+      </div>
+    </fieldset>
+
+    <label class="check">
+      <input type="checkbox" name="externalOnly" value="1" {{checked .Status.ExternalOnly}}>
+      Nur externe Quellen weiterleiten
+      <small>Pakete aus dem LAN werden nicht weitergeleitet &ndash; LAN-Clients sprechen Sunshine
+      direkt an. Zum Testen von innen ueber die eigene WAN-Adresse muss das aus.</small>
+    </label>
+
+    <label class="check">
+      <input type="checkbox" name="flowtable" value="1" {{checked .Status.Flowtable}}>
+      Fast-Path (nftables flowtable)
+      <small>Schleust etablierte Flows an der Netfilter-Kette vorbei. Optional; bei Problemen
+      einfach wieder abschalten.</small>
+    </label>
+
+    <button type="submit" class="primary">Speichern</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Verlauf</h2>
+  <ul class="events" id="events">
+    {{range .Status.Events}}
+    <li class="{{.Level}}"><time>{{.Time.Format "02.01. 15:04:05"}}</time><span>{{.Message}}</span></li>
+    {{else}}
+    <li class="muted">noch nichts passiert</li>
+    {{end}}
+  </ul>
+</section>
+
+<footer>
+  <span id="clock">{{.Status.Now.Format "02.01.2006 15:04:05"}}</span> &middot;
+  Weiterleitung per nftables DNAT, kein Userspace-Proxy
+</footer>
+<script src="/static/app.js"></script>
+</body>
+</html>
+{{end}}

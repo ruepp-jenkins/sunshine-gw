@@ -1,0 +1,4 @@
+/.env
+/data/
+/.build-gateway
+/gateway

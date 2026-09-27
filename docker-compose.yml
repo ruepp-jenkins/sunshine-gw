@@ -1,0 +1,24 @@
+services:
+  sunshine-gateway:
+    build: .
+    image: sunshine-gateway:latest
+    container_name: sunshine-gateway
+    # The container shares the host's network stack: the FRITZ!Box port forward points
+    # at this machine's LAN address, and the rules this process loads are the host's.
+    network_mode: host
+    cap_add:
+      - NET_ADMIN   # load nftables rules, write iptables chains
+      - NET_RAW     # required by iptables for some matches
+    env_file: .env
+    environment:
+      # Bind the UI to the LAN address, never to 0.0.0.0, and never to a forwarded port.
+      GW_LISTEN: ${GW_LISTEN:?GW_LISTEN fehlt, z.B. 10.10.10.20:8080}
+      TZ: ${TZ:-Europe/Berlin}
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "nft", "list", "tables"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
