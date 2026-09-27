@@ -136,6 +136,38 @@ Moonlight von aussen verbinden (Handy im Mobilfunk), waehrend des Streams erneut
 `nft list table inet sunshine_gw`: die Zaehler der UDP-Regeln laufen hoch. Im
 Web-Interface ist dasselbe sichtbar, inklusive Anzahl aktiver Verbindungen.
 
+### Warum ein Test aus dem eigenen LAN nichts beweist
+
+Moonlight merkt sich pro gekoppeltem Rechner **mehrere** Adressen - local, manual, IPv6,
+remote - und probiert sie bei jedem Poll in dieser Reihenfolge durch; die erste, die
+antwortet, wird benutzt. Die direkte Adresse des Sunshine-Rechners lernt es dabei von
+selbst, per mDNS-Discovery im LAN. Gekoppelte Rechner werden ueber Sunshines UUID
+identifiziert, nicht ueber die Adresse: Gateway-Pfad und direkt gefundener Rechner sind
+derselbe Eintrag, und es gibt keinen Schalter, der Moonlight auf eine Adresse festnagelt.
+
+Aus dem LAN ist der direkte Weg erreichbar, also wechselt Moonlight beim naechsten Poll -
+typischerweise direkt nach dem Beenden eines Streams - darauf zurueck. Das ist gewolltes
+Client-Verhalten und am Gateway nicht behebbar: dazu muesste man Sunshines serverinfo
+umschreiben, also die per Client-Zertifikat geschuetzte HTTPS-Verbindung auf 47984
+aufbrechen, was das Pairing zerstoert. Von aussen ist der direkte Weg nicht erreichbar,
+dort bleibt es beim Gateway - und das ist der Fall, auf den es ankommt.
+
+Sauber pruefen lassen sich drei Wege:
+
+1. **Von aussen, ueber Mobilfunk.** Das echte Szenario, und das einzige, das auch
+   „nur externe Quellen" mitprueft.
+2. **Direkten Weg auf dem Test-Client sperren**, z.B. unter Linux
+   `sudo ip route add blackhole <sunshine-ip>/32`, unter Windows eine Firewall-Regel.
+   Moonlight findet den Rechner dann weiter per mDNS, kommt aber nicht durch und faellt
+   auf die manuell eingetragene Gateway-Adresse zurueck.
+3. **Test-Client in ein anderes Subnetz/VLAN**, dessen Adressen ausserhalb des
+   eingetragenen LAN-Netzes liegen - dann greift auch „nur externe Quellen" wie im
+   Ernstfall.
+
+Mit eingeschaltetem „nur externe Quellen" ist ein Test aus dem LAN ueber die
+Gateway-Adresse ohnehin blockiert, und zwar absichtlich. Wer es zum Testen ausschaltet,
+sollte es danach wieder einschalten.
+
 ```sh
 docker compose exec sunshine-gw conntrack -L -d <GATEWAY_IP>
 ```
@@ -210,8 +242,20 @@ Pruefung im UI.
 
 * **IPv4.** Die Portfreigabe der FRITZ!Box und Moonlight laufen hier ueber IPv4;
   IPv6-Weiterleitung ist nicht implementiert.
-* **Masquerade** heisst: in Sunshines Logs erscheinen externe Clients mit der
-  Gateway-IP.
+* **Masquerade** heisst: Sunshine sieht externe Clients mit der Gateway-IP, also mit
+  einer LAN-Adresse - und ordnet sie damit als LAN-Clients ein. Das hat eine Folge, die
+  man kennen muss: Sunshines `lan_encryption_mode` steht per Default auf `0` (keine
+  Verschluesselung), `wan_encryption_mode` auf `1`. Ueber dieses Gateway greift immer der
+  LAN-Wert, Internet-Streams liefen also unverschluesselt, obwohl Sunshines
+  WAN-Voreinstellung sie verschluesselt haette. Wer das nicht will, setzt in Sunshine
+  **`lan_encryption_mode = 1`** (oder `2`, dann werden Clients ohne Verschluesselung
+  abgewiesen). Aus demselben Grund gilt `origin_web_ui_allowed = lan` fuer externe
+  Clients - ein weiterer Grund, Port 47990 niemals freizugeben.
+
+  Die Alternative waere, die Client-Adressen zu erhalten, statt zu maskieren. Das
+  verlangt auf dem Sunshine-Rechner eine Route zurueck ueber das Gateway (im Zweifel: das
+  Gateway als Default-Route), greift also tief in dessen Netzkonfiguration ein - deshalb
+  hier nicht der Weg.
 * Das Web-Interface spricht HTTP. Es gehoert an eine LAN-Adresse gebunden und nicht
   ins Internet; es ist nie ueber die weitergeleiteten Ports erreichbar.
 
