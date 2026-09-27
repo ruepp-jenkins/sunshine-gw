@@ -57,6 +57,17 @@ func (m *Manager) Health(st config.State) []Check {
 		add("conntrack", Warn, "conntrack fehlt - laufende Streams laufen nach dem Abschalten bis zum Timeout weiter")
 	}
 
+	// Accounting is what fills the per-client byte counters. Off by default on most
+	// distributions, and not settable from inside the container, so it is reported rather
+	// than fixed. The client list works without it; only the volumes stay unknown.
+	if ConntrackAccounting() {
+		add("conntrack-Accounting", OK, "net.netfilter.nf_conntrack_acct=1 - Datenmengen pro Client werden gezaehlt")
+	} else {
+		add("conntrack-Accounting", Warn,
+			"net.netfilter.nf_conntrack_acct=0 - Clients und Flows sind sichtbar, Datenmengen pro Client nicht. "+
+				"Auf dem Host setzen: /etc/sysctl.d/99-sunshine-gw.conf, dann sysctl --system")
+	}
+
 	switch {
 	case !m.ForwardPolicyDrop():
 		add("FORWARD-Policy", OK, "FORWARD verwirft nicht per Default")
@@ -227,6 +238,14 @@ func addrOnInterface(iface, want string) bool {
 		}
 	}
 	return false
+}
+
+// ConntrackAccounting reports whether the kernel counts bytes per connection. Costs two
+// counter increments per packet in a code path conntrack walks anyway, which is why it is
+// the cheapest way to get per-client volumes - no rule, no userspace, no copy.
+func ConntrackAccounting() bool {
+	v, err := readSysctl("net/netfilter/nf_conntrack_acct")
+	return err == nil && v == "1"
 }
 
 func readSysctl(path string) (string, error) {

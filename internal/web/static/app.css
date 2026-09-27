@@ -110,3 +110,28 @@ table.counters .r { text-align: right; }
 .events li.error span { color: var(--err); }
 
 footer { color: var(--muted); font-size: .8rem; text-align: center; }
+
+/* Durchsatz-Grafik. Gezeichnet wird sie im Browser aus /api/status; die Messwerte kommen
+   vom Sampler, der neben dem Datenpfad laeuft. */
+.chart-head { display: flex; gap: 1.2rem; align-items: baseline; flex-wrap: wrap; font-size: .85rem; margin-bottom: .5rem; }
+.chart-head strong { font-variant-numeric: tabular-nums; }
+.chart-head .legend { display: inline-block; width: .7rem; height: .7rem; border-radius: 2px; margin-right: .35rem; }
+.chart-head .legend.up { background: var(--accent); }
+.chart-head .legend.down { background: var(--ok); }
+.chart {
+  width: 100%; height: 140px; display: block;
+  background: linear-gradient(to top, color-mix(in srgb, var(--line) 35%, transparent) 0 1px, transparent 1px);
+  background-size: 100% 25%;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+.chart .area { stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.chart .area.up { fill: color-mix(in srgb, var(--accent) 22%, transparent); stroke: var(--accent); }
+.chart .area.down { fill: color-mix(in srgb, var(--ok) 22%, transparent); stroke: var(--ok); }
+.chart-axis { display: flex; justify-content: space-between; font-size: .75rem; color: var(--muted); margin-top: .25rem; }
+
+table.clients { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: .9rem; }
+table.clients th, table.clients td { text-align: left; padding: .35rem .5rem; border-bottom: 1px solid var(--line); }
+table.clients th { font-size: .78rem; color: var(--muted); font-weight: 600; }
+table.clients .r { text-align: right; }
+table.clients .live { color: var(--ok); font-weight: 600; }
+form.inline { margin: .8rem 0 0; }

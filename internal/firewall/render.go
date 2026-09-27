@@ -15,6 +15,7 @@ const (
 	LabelMasqUDP  = "masq-udp"
 	LabelFwdTCP   = "fwd-tcp"
 	LabelFwdUDP   = "fwd-udp"
+	LabelFwdReply = "fwd-reply"
 	LabelGuardTCP = "guard-tcp"
 	LabelGuardUDP = "guard-udp"
 )
@@ -113,7 +114,10 @@ func RenderForward(st config.State) (string, error) {
 		fmt.Fprintf(&b, "\t\tip daddr %s udp dport @udp_ports counter accept comment \"%s\"\n",
 			st.Target, LabelFwdUDP)
 	}
-	fmt.Fprintf(&b, "\t\tip saddr %s ct state established,related counter accept\n", st.Target)
+	// Labelled like the others: this counter is the download direction of everything the
+	// gateway forwards, which is what the bandwidth graph in the UI draws.
+	fmt.Fprintf(&b, "\t\tip saddr %s ct state established,related counter accept comment \"%s\"\n",
+		st.Target, LabelFwdReply)
 	b.WriteString("\t}\n")
 
 	b.WriteString("}\n")

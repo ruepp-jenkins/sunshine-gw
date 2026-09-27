@@ -110,6 +110,40 @@ Das Web-Interface hat genau eine Seite:
 * **Zaehler und Pruefungen** - zeigen, ob Pakete ankommen und ob die Voraussetzungen
   am Host stimmen (ip_forward, FORWARD-Policy, conntrack, Erreichbarkeit des Ziels).
 
+## Wer nutzt das Gateway
+
+Das Web-Interface zeigt den Durchsatz der letzten halben Stunde als Grafik (hoch und
+runter getrennt) und darunter eine Tabelle der Clients: Adresse, aktiv oder beendet,
+Anzahl Flows, bewegte Datenmengen, Anzahl Sitzungen, letzter Kontakt. Der Verlauf
+ueberlebt einen Neustart (`/data/metrics.json`) und laesst sich mit einem Knopf loeschen.
+
+**Das kostet keine Latenz, weil nichts davon im Datenpfad liegt.** Beide Quellen sind
+Zustand, den der Kernel ohnehin fuehrt:
+
+* **Durchsatz** aus den Zaehlern der Forward-Kette. Die stehen in den Regeln, die es fuer
+  die Weiterleitung sowieso gibt - ein Zaehler ist ein Inkrement auf einer Cache-Zeile,
+  die das Paket gerade anfasst.
+* **Adressen und Datenmengen** aus conntrack. Jede weitergeleitete Verbindung hat dort
+  einen Eintrag, sonst koennte der Kernel die Uebersetzung nicht machen; die Quelladresse
+  darin ist die echte Adresse des Clients im Internet.
+
+Ein Sampler liest beides alle fuenf Sekunden - zwei kurzlebige Kommandos, rund 0,2 % einer
+CPU auf der VM, und **niemals ein Paket**. Das ist der entscheidende Unterschied zu jeder
+Form von Mitschnitt: ein Userspace-Proxy, ein Port-Mirror oder pcap wuerden Latenz und
+Jitter kosten, genau das, worauf Moonlight reagiert. Deshalb gibt es hier auch keine
+Per-Paket-Statistik und keine Protokollanalyse: der Preis dafuer waere der, den das ganze
+Projekt vermeiden soll.
+
+Fuer die Datenmengen pro Client muss `net.netfilter.nf_conntrack_acct=1` gesetzt sein
+(steht in `host-setup/99-sunshine-gw.conf`, im Container nicht setzbar). Fehlt es, sagt
+das die Pruefliste, und die Tabelle zeigt Adressen und Flows ohne Volumen.
+
+Was die Zahlen **nicht** sagen: wer jemand ist. Sichtbar ist die Adresse, mit der das
+Paket ankam - bei Mobilfunk das Carrier-NAT, nicht das Geraet. Und durch das Masquerade
+sieht Sunshine selbst alle externen Clients als Gateway-IP; wer Sunshines eigene Logs
+liest, findet dort keine Client-Adressen mehr. Diese Tabelle ist die einzige Stelle, an
+der sie stehen.
+
 ## Passwort und Hash-Format
 
 `hash-password` erzeugt `pbkdf2-sha256.<Runden>.<Salt>.<Key>` mit 210000 Runden und
@@ -305,4 +339,10 @@ Aufbau: `cmd/gateway` verdrahtet, `cmd/junitreport` ist das CI-Hilfsmittel von o
 `internal/config` haelt und persistiert den Zustand,
 `internal/firewall` rendert und laedt das Regelwerk, `internal/control` haelt Zustand
 und Kernel in Deckung, `internal/scheduler` ist die taegliche Abschaltung,
-`internal/web` ist die eine Seite.
+`internal/metrics` sammelt Durchsatz und Clients neben dem Datenpfad, `internal/web` ist
+die eine Seite.
+
+Die Zeichenlogik der Grafik (`internal/web/static/app.js`) ist nicht Teil der Go-Suite -
+dafuer waere ein Node-Toolchain im Image-Build noetig. Sie wurde einmal gegen eine
+DOM-Attrappe geprueft (Achsenrichtung, Begrenzung von Ausreissern, leere Messreihe,
+fehlendes Accounting); wer daran etwas aendert, sollte im Browser nachsehen.

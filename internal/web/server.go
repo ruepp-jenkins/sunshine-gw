@@ -68,6 +68,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/", s.requireAuth(s.handleIndex))
 	mux.HandleFunc("/toggle", s.requireAuth(s.handleToggle))
 	mux.HandleFunc("/config", s.requireAuth(s.handleConfig))
+	mux.HandleFunc("/forget", s.requireAuth(s.handleForget))
 	mux.HandleFunc("/api/status", s.requireAuth(s.handleAPIStatus))
 	mux.Handle("/static/", http.FileServer(http.FS(assets)))
 	return noStore(mux)
@@ -155,6 +156,17 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.redirect(w, r, "Einstellungen gespeichert.", "")
+}
+
+// handleForget drops the recorded clients. The record says who reached the gateway and how
+// much they moved, so there has to be an obvious way to get rid of it.
+func (s *Server) handleForget(w http.ResponseWriter, r *http.Request) {
+	if !s.checkPost(w, r) {
+		return
+	}
+	s.ctrl.Metrics().Forget()
+	s.log.Infof("Client-Verlauf geloescht (von %s)", remoteAddr(r))
+	s.redirect(w, r, "Verlauf geloescht.", "")
 }
 
 // checkPost enforces the method and the CSRF token. The token lives for the lifetime

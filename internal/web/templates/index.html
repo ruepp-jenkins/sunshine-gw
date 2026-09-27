@@ -55,6 +55,42 @@
 </section>
 
 <section class="card">
+  <h2>Durchsatz</h2>
+  <div class="chart-head">
+    <div><span class="legend down"></span>Runter <strong id="rate-down">&ndash;</strong></div>
+    <div><span class="legend up"></span>Hoch <strong id="rate-up">&ndash;</strong></div>
+    <div class="muted" id="chart-scale"></div>
+  </div>
+  <svg id="chart" class="chart" viewBox="0 0 600 140" preserveAspectRatio="none"
+       role="img" aria-label="Durchsatz der letzten Minuten">
+    <path id="chart-down" class="area down" d=""></path>
+    <path id="chart-up" class="area up" d=""></path>
+  </svg>
+  <div class="chart-axis"><span id="chart-span">&nbsp;</span><span>jetzt</span></div>
+  <p class="muted" id="chart-note">Gemessen werden die Zaehler der Forward-Kette, nicht die Pakete selbst
+  &ndash; die Messung liegt neben dem Datenpfad und kann den Stream nicht bremsen.</p>
+</section>
+
+<section class="card">
+  <h2>Clients</h2>
+  <p class="muted" id="clients-note"></p>
+  <table class="clients">
+    <thead><tr>
+      <th>Adresse</th><th>Status</th><th class="r">Flows</th>
+      <th class="r">Hoch</th><th class="r">Runter</th><th class="r">Sitzungen</th><th>Zuletzt</th>
+    </tr></thead>
+    <tbody id="clients">
+      <tr><td colspan="7" class="muted">noch nichts gesehen</td></tr>
+    </tbody>
+  </table>
+  <form method="post" action="/forget" class="inline"
+        onsubmit="return confirm('Aufgezeichnete Clients und Datenmengen loeschen?')">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <button type="submit">Verlauf loeschen</button>
+  </form>
+</section>
+
+<section class="card">
   <h2>Zaehler</h2>
   <p class="muted">Kommt Traffic an, laufen diese Zahlen hoch. Die Weiterleitung selbst passiert im
   Kernel &ndash; dieser Prozess sieht kein einziges Paket.</p>

@@ -7,6 +7,7 @@ import (
 	"github.com/ruepp-jenkins/sunshine-gw/internal/config"
 	"github.com/ruepp-jenkins/sunshine-gw/internal/events"
 	"github.com/ruepp-jenkins/sunshine-gw/internal/firewall"
+	"github.com/ruepp-jenkins/sunshine-gw/internal/metrics"
 )
 
 // Status is everything the page shows, in one shot.
@@ -32,6 +33,7 @@ type Status struct {
 	Checks       []firewall.Check   `json:"checks"`
 	Worst        firewall.Level     `json:"worst"`
 	Events       []events.Event     `json:"events"`
+	Metrics      metrics.Snapshot   `json:"metrics"`
 }
 
 func (c *Controller) invalidate() {
@@ -50,12 +52,16 @@ func (c *Controller) Status() Status {
 		c.statusMu.Unlock()
 		st.Now = time.Now()
 		st.Events = c.log.Recent()
+		// The sampler keeps filling these behind the cache, so they are taken fresh -
+		// reading them costs a lock, not a subprocess.
+		st.Metrics = c.metrics.Snapshot()
 		return st
 	}
 	c.statusMu.Unlock()
 
 	st := c.State()
 	out := buildStatus(st, c.fw, c.log)
+	out.Metrics = c.metrics.Snapshot()
 
 	c.statusMu.Lock()
 	cached := out

@@ -11,6 +11,7 @@ import (
 	"github.com/ruepp-jenkins/sunshine-gw/internal/config"
 	"github.com/ruepp-jenkins/sunshine-gw/internal/events"
 	"github.com/ruepp-jenkins/sunshine-gw/internal/firewall"
+	"github.com/ruepp-jenkins/sunshine-gw/internal/metrics"
 )
 
 // Firewall is the kernel side of the gateway. The interface exists so the state
@@ -31,8 +32,9 @@ type Controller struct {
 	state config.State
 	path  string
 
-	fw  Firewall
-	log *events.Log
+	fw      Firewall
+	log     *events.Log
+	metrics *metrics.Store
 
 	reload chan struct{}
 
@@ -44,6 +46,11 @@ type Controller struct {
 	cacheTTL    time.Duration
 }
 
+// sampleInterval is how often throughput and clients are read from the kernel. Five
+// seconds is frequent enough for a readable graph and rare enough to be invisible: two
+// short-lived commands, never a packet.
+const sampleInterval = 5 * time.Second
+
 func New(path string, fw Firewall, log *events.Log) (*Controller, error) {
 	st, err := config.Load(path)
 	if err != nil {
@@ -54,11 +61,15 @@ func New(path string, fw Firewall, log *events.Log) (*Controller, error) {
 		path:     path,
 		fw:       fw,
 		log:      log,
+		metrics:  metrics.New(path, sampleInterval),
 		reload:   make(chan struct{}, 1),
 		cacheTTL: 1500 * time.Millisecond,
 	}
 	return c, nil
 }
+
+// Metrics is the throughput and client history, shared with the sampler that fills it.
+func (c *Controller) Metrics() *metrics.Store { return c.metrics }
 
 // Reload fires whenever the configuration changed and the scheduler has to recompute.
 func (c *Controller) Reload() <-chan struct{} { return c.reload }

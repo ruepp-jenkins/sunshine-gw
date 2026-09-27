@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ruepp-jenkins/sunshine-gw/internal/config"
 	"github.com/ruepp-jenkins/sunshine-gw/internal/control"
@@ -310,5 +311,86 @@ func TestBruteForceIsBlocked(t *testing.T) {
 	h.ServeHTTP(w, authed(t, http.MethodGet, "/", ""))
 	if w.Code != http.StatusTooManyRequests {
 		t.Errorf("nach fuenf Fehlversuchen = %d, erwartet 429", w.Code)
+	}
+}
+
+// The page carries the sections; their content is drawn in the browser from /api/status,
+// so the JSON is what has to contain the data.
+func TestStatusCarriesMetrics(t *testing.T) {
+	srv, h, _ := newTestServer(t)
+	store := srv.ctrl.Metrics()
+	t0 := time.Now()
+	counters := func(up, down uint64) []firewall.Counter {
+		return []firewall.Counter{
+			{Label: firewall.LabelFwdUDP, Bytes: up},
+			{Label: firewall.LabelFwdReply, Bytes: down},
+		}
+	}
+	flows := []firewall.Flow{{
+		Proto: "udp", ClientIP: "203.0.113.9", ClientPort: 51234, Port: 47998,
+		BytesUp: 1_000, BytesDown: 8_000, Accounted: true,
+	}}
+	store.Observe(counters(0, 0), nil, true, t0)
+	store.Observe(counters(500_000, 4_000_000), flows, true, t0.Add(5*time.Second))
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, authed(t, http.MethodGet, "/api/status", ""))
+	var status control.Status
+	if err := json.Unmarshal(w.Body.Bytes(), &status); err != nil {
+		t.Fatalf("kein gueltiges JSON: %v", err)
+	}
+	if len(status.Metrics.Samples) != 1 {
+		t.Fatalf("%d Samples im Status", len(status.Metrics.Samples))
+	}
+	if got := status.Metrics.Samples[0].Down; got != 800_000 {
+		t.Errorf("Download-Rate = %d B/s, erwartet 800000", got)
+	}
+	if len(status.Metrics.Clients) != 1 || status.Metrics.Clients[0].IP != "203.0.113.9" {
+		t.Errorf("Clients = %+v", status.Metrics.Clients)
+	}
+	if !status.Metrics.Accounted {
+		t.Error("Accounting-Flag fehlt im Status")
+	}
+
+	page := httptest.NewRecorder()
+	h.ServeHTTP(page, authed(t, http.MethodGet, "/", ""))
+	for _, want := range []string{"Durchsatz", "id=\"chart\"", "Clients", "id=\"clients\"", "/forget"} {
+		if !strings.Contains(page.Body.String(), want) {
+			t.Errorf("Seite enthaelt %q nicht", want)
+		}
+	}
+}
+
+// The record says who reached the gateway and how much they moved, so deleting it has to
+// work - and must not be doable without the CSRF token.
+func TestForgetClearsClientHistory(t *testing.T) {
+	srv, h, _ := newTestServer(t)
+	store := srv.ctrl.Metrics()
+	t0 := time.Now()
+	store.Observe(nil, nil, true, t0)
+	store.Observe(nil, []firewall.Flow{{
+		Proto: "udp", ClientIP: "203.0.113.9", ClientPort: 1, Port: 47998, Accounted: true,
+	}}, true, t0.Add(5*time.Second))
+	if len(store.Snapshot().Clients) != 1 {
+		t.Fatal("Voraussetzung: ein Client im Verlauf")
+	}
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, authed(t, http.MethodPost, "/forget", "csrf=falsch"))
+	if w.Code != http.StatusForbidden {
+		t.Errorf("Loeschen ohne Token = %d, erwartet 403", w.Code)
+	}
+	if len(store.Snapshot().Clients) != 1 {
+		t.Error("Verlauf wurde ohne gueltiges Token geloescht")
+	}
+
+	token := csrfToken(t, h)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, authed(t, http.MethodPost, "/forget", url.Values{"csrf": {token}}.Encode()))
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("Loeschen = %d, Body: %s", w.Code, w.Body.String())
+	}
+	if got := len(store.Snapshot().Clients); got != 0 {
+		t.Errorf("%d Clients nach dem Loeschen", got)
 	}
 }

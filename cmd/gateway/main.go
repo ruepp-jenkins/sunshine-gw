@@ -24,6 +24,7 @@ import (
 	"github.com/ruepp-jenkins/sunshine-gw/internal/control"
 	"github.com/ruepp-jenkins/sunshine-gw/internal/events"
 	"github.com/ruepp-jenkins/sunshine-gw/internal/firewall"
+	"github.com/ruepp-jenkins/sunshine-gw/internal/metrics"
 	"github.com/ruepp-jenkins/sunshine-gw/internal/scheduler"
 	"github.com/ruepp-jenkins/sunshine-gw/internal/web"
 )
@@ -94,6 +95,9 @@ func main() {
 
 	sched := scheduler.New(ctrl, evlog)
 	go sched.Run(ctx)
+
+	// Reads counters and conntrack beside the data path; see internal/metrics.
+	go metrics.NewSampler(ctrl.Metrics(), fw, ctrl, evlog).Run(ctx)
 
 	go func() {
 		if strings.HasPrefix(*listen, "0.0.0.0:") || strings.HasPrefix(*listen, ":") {
