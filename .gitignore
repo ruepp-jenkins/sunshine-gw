@@ -2,3 +2,8 @@
 /data/
 /.build-gateway
 /gateway
+
+# Von den Build-Skripten im Workspace erzeugt
+/test-results/
+/digest-*.txt
+/build-metadata-*.json

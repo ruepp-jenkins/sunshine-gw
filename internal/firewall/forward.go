@@ -3,7 +3,7 @@ package firewall
 import (
 	"strings"
 
-	"github.com/stefan/sunshine-gateway/internal/config"
+	"github.com/ruepp-jenkins/sunshine-gw/internal/config"
 )
 
 // Docker sets the iptables FORWARD policy to DROP. An accept in our own nftables

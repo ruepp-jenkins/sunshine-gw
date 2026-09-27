@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/stefan/sunshine-gateway/internal/config"
+	"github.com/ruepp-jenkins/sunshine-gw/internal/config"
 )
 
 var deletedRe = regexp.MustCompile(`(\d+) flow entries have been deleted`)

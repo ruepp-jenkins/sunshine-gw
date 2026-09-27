@@ -5,8 +5,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/stefan/sunshine-gateway/internal/control"
-	"github.com/stefan/sunshine-gateway/internal/events"
+	"github.com/ruepp-jenkins/sunshine-gw/internal/control"
+	"github.com/ruepp-jenkins/sunshine-gw/internal/events"
 )
 
 type Scheduler struct {

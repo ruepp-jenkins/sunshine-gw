@@ -12,10 +12,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stefan/sunshine-gateway/internal/config"
-	"github.com/stefan/sunshine-gateway/internal/control"
-	"github.com/stefan/sunshine-gateway/internal/events"
-	"github.com/stefan/sunshine-gateway/internal/firewall"
+	"github.com/ruepp-jenkins/sunshine-gw/internal/config"
+	"github.com/ruepp-jenkins/sunshine-gw/internal/control"
+	"github.com/ruepp-jenkins/sunshine-gw/internal/events"
+	"github.com/ruepp-jenkins/sunshine-gw/internal/firewall"
 )
 
 // stubFirewall keeps the web tests away from the kernel.

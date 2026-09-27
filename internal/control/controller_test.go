@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stefan/sunshine-gateway/internal/config"
-	"github.com/stefan/sunshine-gateway/internal/events"
-	"github.com/stefan/sunshine-gateway/internal/firewall"
+	"github.com/ruepp-jenkins/sunshine-gw/internal/config"
+	"github.com/ruepp-jenkins/sunshine-gw/internal/events"
+	"github.com/ruepp-jenkins/sunshine-gw/internal/firewall"
 )
 
 // fakeFirewall records what the controller asked the kernel to do.

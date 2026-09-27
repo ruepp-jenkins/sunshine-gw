@@ -1,0 +1,18 @@
+# The build context is the repository root. Everything the image needs is go.mod, cmd/,
+# internal/ and scripts/image-tests.sh; anything else in here only changes the context
+# hash and throws away BuildKit's cache.
+.git
+.gitignore
+.env
+.env.example
+data/
+gateway
+.build-gateway
+test-results/
+digest-*.txt
+build-metadata-*.json
+README.md
+Jenkinsfile
+Makefile
+docker-compose.yml
+host-setup/

@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/stefan/sunshine-gateway/internal/config"
-	"github.com/stefan/sunshine-gateway/internal/events"
+	"github.com/ruepp-jenkins/sunshine-gw/internal/config"
+	"github.com/ruepp-jenkins/sunshine-gw/internal/events"
 )
 
 const (

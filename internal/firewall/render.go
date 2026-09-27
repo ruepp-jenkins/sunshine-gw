@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/stefan/sunshine-gateway/internal/config"
+	"github.com/ruepp-jenkins/sunshine-gw/internal/config"
 )
 
 // Rule comments double as stable labels for the counters shown in the web UI.

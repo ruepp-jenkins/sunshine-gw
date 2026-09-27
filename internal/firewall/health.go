@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/stefan/sunshine-gateway/internal/config"
+	"github.com/ruepp-jenkins/sunshine-gw/internal/config"
 )
 
 type Level string

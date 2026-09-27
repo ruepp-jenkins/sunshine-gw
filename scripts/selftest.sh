@@ -3,7 +3,7 @@
 # echten Kernel, Host-Voraussetzungen, geladener Zustand. Aendert nichts.
 set -eu
 
-SERVICE=${SERVICE:-sunshine-gateway}
+SERVICE=${SERVICE:-sunshine-gw}
 run() { docker compose exec -T "$SERVICE" "$@"; }
 
 echo "== Ruleset-Syntax (nft -c, Trockenlauf im Kernel)"

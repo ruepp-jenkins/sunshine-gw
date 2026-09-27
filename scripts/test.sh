@@ -4,11 +4,12 @@ echo "Running tests and exporting the JUnit report"
 
 # Runs the suite inside the image build and extracts only the JUnit XML into the workspace, where
 # the Jenkinsfile's junit step picks it up. Doing it through the build rather than a separate
-# `dotnet test` means the agent needs no .NET SDK — only Docker — and the tests run exactly once:
+# `go test` means the agent needs no Go toolchain — only Docker — and the tests run exactly once:
 # the image build that follows reuses this cached stage.
 #
-# The test-results target never fails, so a failing test still produces a report. The push build
-# is what refuses to proceed, via the Dockerfile's `verified` stage.
+# The test-results target never fails, so a failing test still produces a report — see
+# scripts/image-tests.sh, which runs inside that stage. The push build is what refuses to proceed,
+# via the Dockerfile's `verified` stage.
 
 RESULTS_DIR="test-results"
 

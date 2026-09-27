@@ -22,8 +22,9 @@ docker buildx install
 # Register the QEMU emulators, but only when something foreign is actually requested.
 #
 # Building a foreign architecture needs binfmt_misc handlers in the kernel, and a plain Linux agent
-# has none — without them the one emulated instruction in the runtime stage (apt-get install curl)
-# fails with "exec format error". The handlers are a host-level setting, so this is idempotent.
+# has none — without them the emulated steps (the Go compile and the runtime stage's
+# `apk add nftables`) fail with "exec format error". The handlers are a host-level setting, so this
+# is idempotent.
 #
 # It also needs --privileged, which is worth not asking an agent for when nothing will be emulated.
 # The check is against the resolved list rather than a string compare, so it stays correct for a

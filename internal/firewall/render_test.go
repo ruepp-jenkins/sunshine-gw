@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stefan/sunshine-gateway/internal/config"
+	"github.com/ruepp-jenkins/sunshine-gw/internal/config"
 )
 
 func testState() config.State {

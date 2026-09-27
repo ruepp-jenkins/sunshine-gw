@@ -148,7 +148,7 @@
 
 <footer>
   <span id="clock">{{.Status.Now.Format "02.01.2006 15:04:05"}}</span> &middot;
-  Weiterleitung per nftables DNAT, kein Userspace-Proxy
+  Weiterleitung per nftables DNAT, kein Userspace-Proxy{{if .Version}} &middot; Build {{.Version}}{{end}}
 </footer>
 <script src="/static/app.js"></script>
 </body>

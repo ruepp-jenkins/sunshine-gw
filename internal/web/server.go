@@ -13,8 +13,8 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/stefan/sunshine-gateway/internal/control"
-	"github.com/stefan/sunshine-gateway/internal/events"
+	"github.com/ruepp-jenkins/sunshine-gw/internal/control"
+	"github.com/ruepp-jenkins/sunshine-gw/internal/events"
 )
 
 //go:embed templates/*.html static/*
@@ -26,6 +26,8 @@ type Server struct {
 
 	user         string
 	passwordHash string
+	// Version is the build the binary was made from, shown in the page footer.
+	Version string
 
 	tmpl     *template.Template
 	csrf     string
@@ -98,6 +100,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		CSRF:    s.csrf,
 		Message: r.URL.Query().Get("msg"),
 		Error:   r.URL.Query().Get("err"),
+		Version: s.Version,
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.tmpl.ExecuteTemplate(w, "index.html", data); err != nil {

@@ -21,13 +21,17 @@ import (
 	// compiled into the binary instead of relying on the image having tzdata.
 	_ "time/tzdata"
 
-	"github.com/stefan/sunshine-gateway/internal/config"
-	"github.com/stefan/sunshine-gateway/internal/control"
-	"github.com/stefan/sunshine-gateway/internal/events"
-	"github.com/stefan/sunshine-gateway/internal/firewall"
-	"github.com/stefan/sunshine-gateway/internal/scheduler"
-	"github.com/stefan/sunshine-gateway/internal/web"
+	"github.com/ruepp-jenkins/sunshine-gw/internal/config"
+	"github.com/ruepp-jenkins/sunshine-gw/internal/control"
+	"github.com/ruepp-jenkins/sunshine-gw/internal/events"
+	"github.com/ruepp-jenkins/sunshine-gw/internal/firewall"
+	"github.com/ruepp-jenkins/sunshine-gw/internal/scheduler"
+	"github.com/ruepp-jenkins/sunshine-gw/internal/web"
 )
+
+// version is set at build time (-X main.version=<commit>) so a running gateway can say
+// which build it is; the web UI shows it in the footer.
+var version = "dev"
 
 func main() {
 	if len(os.Args) > 1 {
@@ -56,7 +60,7 @@ func main() {
 	hash := os.Getenv("GW_PASSWORD_HASH")
 	if strings.TrimSpace(hash) == "" {
 		logger.Fatalf("GW_PASSWORD_HASH ist nicht gesetzt. Hash erzeugen mit:\n" +
-			"  docker compose run --rm sunshine-gateway hash-password")
+			"  docker compose run --rm sunshine-gw hash-password")
 	}
 
 	fw := firewall.New(evlog)
@@ -77,6 +81,7 @@ func main() {
 	if err != nil {
 		logger.Fatalf("Web-Interface: %v", err)
 	}
+	srv.Version = version
 	httpSrv := srv.HTTPServer(*listen)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

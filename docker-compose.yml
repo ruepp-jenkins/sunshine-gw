@@ -1,8 +1,11 @@
 services:
-  sunshine-gateway:
+  sunshine-gw:
+    # Published multi-arch by Jenkins, so `docker compose pull` is the normal update path.
+    # `build: .` stays for a local checkout: compose builds only when the image is missing,
+    # or when asked with `docker compose up --build`.
+    image: ruepp/sunshine-gw:latest
     build: .
-    image: sunshine-gateway:latest
-    container_name: sunshine-gateway
+    container_name: sunshine-gw
     # The container shares the host's network stack: the FRITZ!Box port forward points
     # at this machine's LAN address, and the rules this process loads are the host's.
     network_mode: host

@@ -52,15 +52,18 @@ sudo sysctl --system
 cp .env.example .env
 $EDITOR .env            # GW_LISTEN auf die LAN-Adresse dieser Maschine setzen
 
-# 3. Passwort setzen
-docker compose build
-docker compose run --rm sunshine-gateway hash-password
+# 3. Image holen und Passwort setzen
+docker compose pull     # oder: docker compose build  (baut inkl. Testsuite lokal)
+docker compose run --rm sunshine-gw hash-password
 # ausgegebenen Hash nach GW_PASSWORD_HASH in .env kopieren
 
 # 4. starten
 docker compose up -d
 docker compose logs -f
 ```
+
+Aktualisieren spaeter: `docker compose pull && docker compose up -d`. Jenkins baut
+`ruepp/sunshine-gw` fuer amd64 und arm64, `docker pull` waehlt die passende Architektur.
 
 Web-Interface dann auf `http://<GW_LISTEN>` - Benutzer aus `GW_USER`, Passwort das
 gerade gehashte. Dort Zieladresse eintragen, speichern, einschalten.
@@ -111,7 +114,7 @@ Das Web-Interface hat genau eine Seite:
 
 ```sh
 make selftest                  # Ruleset gegen den echten Kernel pruefen, Voraussetzungen
-docker compose exec sunshine-gateway nft list table inet sunshine_gw
+docker compose exec sunshine-gw nft list table inet sunshine_gw
 ```
 
 Moonlight von aussen verbinden (Handy im Mobilfunk), waehrend des Streams erneut
@@ -119,7 +122,7 @@ Moonlight von aussen verbinden (Handy im Mobilfunk), waehrend des Streams erneut
 Web-Interface ist dasselbe sichtbar, inklusive Anzahl aktiver Verbindungen.
 
 ```sh
-docker compose exec sunshine-gateway conntrack -L -d <GATEWAY_IP>
+docker compose exec sunshine-gw conntrack -L -d <GATEWAY_IP>
 ```
 
 ### Kill-Switch
@@ -197,16 +200,50 @@ Pruefung im UI.
 * Das Web-Interface spricht HTTP. Es gehoert an eine LAN-Adresse gebunden und nicht
   ins Internet; es ist nie ueber die weitergeleiteten Ports erreichbar.
 
+## Build-Pipeline
+
+`Jenkinsfile` baut `ruepp/sunshine-gw` fuer amd64 und arm64 - jede Architektur nativ auf
+ihrem eigenen Agenten, weil Emulation den Go-Build und die Testsuite unnoetig langsam
+macht. Beide pushen ihr Image ohne Tag, nur per Digest; `scripts/docker_manifest.sh` fuegt
+die beiden Digests zu einer Manifest-Liste zusammen, und erst die bekommt einen Tag. Ein
+Build, der vorher abbricht, hinterlaesst damit keinen halben Tag in der Registry.
+
+**Die Tests sitzen im Image-Build.** Der Dockerfile-Stage `test` laeuft `gofmt`, `go vet`
+und `go test -race`; `test-results` exportiert daraus den JUnit-Report (auch bei roter
+Suite, sonst hat Jenkins nichts zu zeigen), und `verified` verweigert die Weiterarbeit,
+wenn etwas rot war. Die Laufzeit-Stufe kopiert aus `build`, das von `verified` abstammt -
+ein Image aus durchgefallenem Code ist damit nicht baubar. Der Agent braucht dafuer nur
+Docker, keine Go-Installation.
+
+`cmd/junitreport` wandelt `go test -json` in JUnit-XML um. Selbst geschrieben, damit das
+Modul abhaengigkeitsfrei bleibt und der Build ausser den Basis-Images nichts aus dem Netz
+zieht. Ein Paket, das nicht kompiliert, erzeugt keine Test-Events - dieser Fall wird zu
+einem fehlschlagenden Testfall, sonst sahe ein kaputter Build nach "nichts zu tun" aus.
+
+**Basis-Images haengen an den Major-Tags** (`golang:1`, `alpine:3`), damit Updates von
+selbst ankommen; der URLTrigger im Jenkinsfile beobachtet dazu `$.digest` der beiden Tags
+auf Docker Hub und baut neu, wenn sich einer bewegt. Tragfaehig ist das nur, weil jede
+Stufe ein Tor hat: eine Go-Version, die den Code bricht, faellt durch die Suite, und ein
+Alpine, das ein Paket umbenennt, faellt durch die Stage `smoke` (die prueft, dass `nft`,
+`iptables` und `conntrack` im Laufzeit-Image existieren und die Binary dort laeuft). Ein
+Go 2 oder Alpine 4 bleibt bewusst aussen vor - das soll ein Commit sein, keine Ueberraschung
+um 3 Uhr nachts. Die Tags stehen im Dockerfile und im Jenkinsfile und muessen zusammen
+geaendert werden.
+
+Der Commit landet per `-X main.version` in der Binary und als OCI-Label im Image: die
+Fusszeile des Web-Interfaces und `docker inspect` sagen beide, welcher Build laeuft.
+
 ## Entwicklung
 
 ```sh
-make test        # Unit-Tests (laufen in einem golang-Container, kein lokales Go noetig)
+make test        # Unit-Tests mit Race-Detector (im golang-Container, kein lokales Go noetig)
 make vet
 make build       # statisches Binary ./gateway
 make ruleset     # gerendertes nftables-Ruleset des laufenden Containers ansehen
 ```
 
-Aufbau: `cmd/gateway` verdrahtet, `internal/config` haelt und persistiert den Zustand,
+Aufbau: `cmd/gateway` verdrahtet, `cmd/junitreport` ist das CI-Hilfsmittel von oben,
+`internal/config` haelt und persistiert den Zustand,
 `internal/firewall` rendert und laedt das Regelwerk, `internal/control` haelt Zustand
 und Kernel in Deckung, `internal/scheduler` ist die taegliche Abschaltung,
 `internal/web` ist die eine Seite.

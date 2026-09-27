@@ -4,9 +4,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/stefan/sunshine-gateway/internal/config"
-	"github.com/stefan/sunshine-gateway/internal/events"
-	"github.com/stefan/sunshine-gateway/internal/firewall"
+	"github.com/ruepp-jenkins/sunshine-gw/internal/config"
+	"github.com/ruepp-jenkins/sunshine-gw/internal/events"
+	"github.com/ruepp-jenkins/sunshine-gw/internal/firewall"
 )
 
 // Status is everything the page shows, in one shot.

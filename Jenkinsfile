@@ -1,8 +1,8 @@
 properties(
     [
         githubProjectProperty(
-            displayName: 'loopdns.de',
-            projectUrlStr: 'https://github.com/ruepp-jenkins/loopdns.de'
+            displayName: 'sunshine-gw',
+            projectUrlStr: 'https://github.com/ruepp-jenkins/sunshine-gw'
         ),
         // Every agent's tags derive from the same datestamp. Concurrent builds of the same branch
         // would write the same intermediate tags, and the manifest could pick up half of one build
@@ -82,7 +82,7 @@ pipeline {
     agent none
 
     environment {
-        IMAGE_FULLNAME = 'ruepp/loopdns'
+        IMAGE_FULLNAME = 'ruepp/sunshine-gw'
 
         // Every agent builds its own architecture and nothing else. 'host' is what tells
         // scripts/docker_platforms.sh to skip the QEMU registration: with a machine per platform
@@ -95,26 +95,39 @@ pipeline {
     }
 
     triggers {
+        // Rebuild when a base image moves, so a fixed alpine or Go release reaches users
+        // without anyone pushing a commit.
+        //
+        // Docker Hub's registry API needs a bearer token even for public images, so this
+        // watches the Hub's own repository API instead, which answers anonymously. The
+        // field to watch is '$.digest': it changes exactly when the tag is republished.
+        // Do not watch 'tag_last_pulled' or 'tag_last_pushed' - the first changes on every
+        // pull by anyone and would trigger a build every half hour.
+        //
+        // The tags mirror the ARG defaults in the Dockerfile: the MAJOR tags, so every Go
+        // 1.x and every Alpine 3.x arrives by itself. That only works because the pipeline
+        // gates on it - the Go suite catches a breaking toolchain, the Dockerfile's `smoke`
+        // stage catches a renamed Alpine package. Change a tag there and here together.
         URLTrigger(
             cronTabSpec: 'H/30 * * * *',
             labelRestriction: 'urltrigger',
             entries: [
                 URLTriggerEntry(
-                    url: 'https://mcr.microsoft.com/v2/dotnet/sdk/manifests/10.0',
+                    url: 'https://hub.docker.com/v2/repositories/library/golang/tags/1',
                     contentTypes: [
                         JsonContent(
                             [
-                                JsonContentEntry(jsonPath: '$.protected')
+                                JsonContentEntry(jsonPath: '$.digest')
                             ]
                         )
                     ]
                 ),
                 URLTriggerEntry(
-                    url: 'https://mcr.microsoft.com/v2/dotnet/aspnet/manifests/10.0',
+                    url: 'https://hub.docker.com/v2/repositories/library/alpine/tags/3',
                     contentTypes: [
                         JsonContent(
                             [
-                                JsonContentEntry(jsonPath: '$.protected')
+                                JsonContentEntry(jsonPath: '$.digest')
                             ]
                         )
                     ]

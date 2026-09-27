@@ -37,10 +37,18 @@ DIGEST_FILE="digest-${ARCH}.txt"
 
 echo "[${BRANCH_NAME:-local}] Building ${IMAGE_REPO} for ${BASE_TAG} natively on ${HOST_PLATFORM}"
 
+# VCS_REF lands in the binary (-X main.version) and in the image labels, so a running
+# gateway and `docker inspect` both say which commit they came from. GIT_COMMIT is set by
+# Jenkins; a run by hand falls back to git, and to "unknown" outside a checkout.
+VCS_REF="${GIT_COMMIT:-$(git rev-parse --short HEAD 2>/dev/null || echo unknown)}"
+BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
 docker buildx build \
     --platform "${RESOLVED_PLATFORMS}" \
     --output "type=image,name=${IMAGE_REPO},push-by-digest=true,name-canonical=true,push=true" \
     --metadata-file "${METADATA_FILE}" \
+    --build-arg "VCS_REF=${VCS_REF}" \
+    --build-arg "BUILD_DATE=${BUILD_DATE}" \
     --pull \
     .
 
