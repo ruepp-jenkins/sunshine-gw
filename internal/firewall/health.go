@@ -98,11 +98,8 @@ func (m *Manager) Health(st config.State) []Check {
 		checks = append(checks, offStateCheck(loaded, m.ForwardAcceptActive(), m.ActiveFlows(st)))
 	}
 
-	if m.guardLoaded() {
-		add("Blackhole", OK, "Tabelle inet %s verwirft die freigegebenen Ports am Gateway selbst", GuardTableName)
-	} else {
-		add("Blackhole", Warn, "Blackhole-Tabelle fehlt - das Gateway antwortet auf den freigegebenen Ports mit Reset")
-	}
+	loadedGuard, rawDrop := m.guardState()
+	checks = append(checks, guardCheck(loadedGuard, rawDrop, st.Enabled))
 
 	if foreign := m.foreignForwardDrops(); len(foreign) > 0 {
 		add("Fremde Firewall", Warn,
@@ -204,8 +201,39 @@ func offStateCheck(tableLoaded, acceptActive bool, flows int) Check {
 	return Check{Name: "Aus-Zustand", Level: OK, Message: msg}
 }
 
-func (m *Manager) guardLoaded() bool {
-	return m.run("nft", "", "list", "table", "inet", GuardTableName).err == nil
+// guardState reports whether the blackhole table is loaded and whether it currently has
+// its raw-hook chain, which is the shape it must have while the forwarding is off.
+func (m *Manager) guardState() (loaded, rawDrop bool) {
+	res := m.run("nft", "", "list", "table", "inet", GuardTableName)
+	if res.err != nil {
+		return false, false
+	}
+	return true, strings.Contains(res.out, "hook prerouting")
+}
+
+// guardCheck judges the blackhole table. The interesting case is the last one: a raw chain
+// left over while the forwarding is on discards exactly the packets that should be
+// translated, and everything else about the setup would still look correct.
+func guardCheck(loaded, rawDrop, enabled bool) Check {
+	const name = "Blackhole"
+	switch {
+	case !loaded:
+		return Check{name, Warn,
+			"Blackhole-Tabelle fehlt - das Gateway antwortet auf den freigegebenen Ports mit Reset statt zu schweigen"}
+	case !enabled && rawDrop:
+		return Check{name, OK,
+			"verwirft die freigegebenen Ports vor conntrack (raw-Hook) - Pakete aus dem Internet legen keinen Zustand an"}
+	case !enabled:
+		return Check{name, Warn,
+			"verwirft erst im input-Hook: Pakete aus dem Internet legen vorher einen conntrack-Eintrag an. " +
+				"Weiterleitung einmal aus- und wieder einschalten, damit die raw-Kette geladen wird"}
+	case rawDrop:
+		return Check{name, Error,
+			"die raw-Kette der Blackhole-Tabelle ist trotz eingeschalteter Weiterleitung geladen - " +
+				"sie verwirft die Pakete vor der Uebersetzung, es kann nichts durchkommen"}
+	default:
+		return Check{name, OK, "verwirft die freigegebenen Ports am Gateway selbst"}
+	}
 }
 
 func (m *Manager) networkChecks(st config.State) []Check {

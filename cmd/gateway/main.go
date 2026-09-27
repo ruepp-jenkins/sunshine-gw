@@ -158,15 +158,27 @@ func printRuleset(args []string) error {
 	if *gateway != "" {
 		st.GatewayIP = *gateway
 	}
-	guard, err := firewall.RenderGuard(st)
-	if err != nil {
-		return err
+	// Both shapes of the blackhole table, so `nft -c -f -` checks the syntax of the
+	// raw-hook variant too - it is only loaded while the forwarding is off, and a syntax
+	// error in it would otherwise surface at the worst possible moment.
+	for _, variant := range []struct {
+		enabled bool
+		label   string
+	}{{false, "Weiterleitung aus, verwirft vor conntrack"}, {true, "Weiterleitung an"}} {
+		v := st
+		v.Enabled = variant.enabled
+		guard, err := firewall.RenderGuard(v)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("# Blackhole-Tabelle, Variante: %s\n", variant.label)
+		fmt.Print(guard)
 	}
-	fmt.Print(guard)
 	forward, err := firewall.RenderForward(st)
 	if err != nil {
 		return err
 	}
+	fmt.Print("# Weiterleitungstabelle\n")
 	fmt.Print(forward)
 	return nil
 }

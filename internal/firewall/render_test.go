@@ -216,3 +216,93 @@ func TestOffStateCheck(t *testing.T) {
 		t.Errorf("unbekannte Flows = %s: %s", unknown.Level, unknown.Message)
 	}
 }
+
+// While the forwarding is off the blackhole has to discard ahead of conntrack. The input
+// hook runs after it, so a packet dropped there has already cost a conntrack entry - and
+// with the FRITZ!Box rule standing permanently, anyone could allocate those at will.
+func TestGuardDropsBeforeConntrackWhileOff(t *testing.T) {
+	st := testState()
+	st.Enabled = false
+	out, err := RenderGuard(st)
+	if err != nil {
+		t.Fatalf("RenderGuard: %v", err)
+	}
+	if !strings.Contains(out, "type filter hook prerouting priority raw") {
+		t.Errorf("keine Kette im raw-Hook:\n%s", out)
+	}
+	for _, want := range []string{
+		"ip daddr 10.10.10.20 tcp dport @tcp_ports counter drop",
+		"ip daddr 10.10.10.20 udp dport @udp_ports counter drop",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("Ruleset enthaelt %q nicht:\n%s", want, out)
+		}
+	}
+	// Der input-Hook bleibt als zweite Schicht stehen.
+	if !strings.Contains(out, "type filter hook input priority filter - 10") {
+		t.Errorf("input-Hook fehlt in der Aus-Variante:\n%s", out)
+	}
+	if strings.Index(out, "hook prerouting") > strings.Index(out, "hook input") {
+		t.Error("raw-Kette muss vor der input-Kette definiert werden")
+	}
+}
+
+// Mit eingeschalteter Weiterleitung darf diese Kette nicht existieren: raw laeuft vor
+// dstnat und wuerde genau die Pakete verwerfen, die uebersetzt werden sollen.
+func TestGuardHasNoRawChainWhileOn(t *testing.T) {
+	st := testState() // Enabled = true
+	out, err := RenderGuard(st)
+	if err != nil {
+		t.Fatalf("RenderGuard: %v", err)
+	}
+	if strings.Contains(out, "hook prerouting") {
+		t.Errorf("raw-Kette wuerde die Weiterleitung abwuergen:\n%s", out)
+	}
+	if !strings.Contains(out, "hook input") {
+		t.Errorf("input-Hook fehlt:\n%s", out)
+	}
+}
+
+// Ohne bekannte eigene Adresse gibt es kein Kriterium fuer die raw-Regel; dann bleibt es
+// bei der input-Schicht, statt etwas Falsches zu verwerfen.
+func TestGuardWithoutGatewayAddressSkipsRawChain(t *testing.T) {
+	st := testState()
+	st.Enabled = false
+	st.GatewayIP = ""
+	out, err := RenderGuard(st)
+	if err != nil {
+		t.Fatalf("RenderGuard: %v", err)
+	}
+	if strings.Contains(out, "hook prerouting") {
+		t.Errorf("raw-Kette ohne Gateway-Adresse:\n%s", out)
+	}
+	if !strings.Contains(out, "hook input") {
+		t.Errorf("input-Hook fehlt:\n%s", out)
+	}
+}
+
+func TestGuardCheck(t *testing.T) {
+	cases := []struct {
+		name            string
+		loaded, raw, on bool
+		want            Level
+		wantIn          string
+	}{
+		{"aus, verwirft vor conntrack", true, true, false, OK, "vor conntrack"},
+		{"aus, nur input-Hook", true, false, false, Warn, "conntrack-Eintrag"},
+		{"an, ohne raw-Kette", true, false, true, OK, "am Gateway selbst"},
+		// Bliebe die raw-Kette beim Einschalten stehen, waere alles andere gruen und
+		// nichts wuerde durchkommen - das muss auffallen.
+		{"an, raw-Kette liegengeblieben", true, true, true, Error, "es kann nichts durchkommen"},
+		{"Tabelle fehlt", false, false, false, Warn, "fehlt"},
+	}
+	for _, tc := range cases {
+		got := guardCheck(tc.loaded, tc.raw, tc.on)
+		if got.Level != tc.want {
+			t.Errorf("%s: Level = %s, erwartet %s (%s)", tc.name, got.Level, tc.want, got.Message)
+		}
+		if !strings.Contains(got.Message, tc.wantIn) {
+			t.Errorf("%s: Meldung nennt %q nicht: %s", tc.name, tc.wantIn, got.Message)
+		}
+	}
+}

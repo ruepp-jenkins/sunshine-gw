@@ -18,6 +18,8 @@ const (
 	LabelFwdReply = "fwd-reply"
 	LabelGuardTCP = "guard-tcp"
 	LabelGuardUDP = "guard-udp"
+	LabelRawTCP   = "guard-raw-tcp"
+	LabelRawUDP   = "guard-raw-udp"
 )
 
 // RenderDelete produces an idempotent, atomic removal of a table: the bare `table`
@@ -125,10 +127,22 @@ func RenderForward(st config.State) (string, error) {
 }
 
 // RenderGuard builds the table that drops the forwarded ports on the gateway itself.
-// It stays loaded even when forwarding is off: the gateway then answers with nothing
-// at all instead of a reset, so the permanent FRITZ!Box rule looks like a blackhole
-// from outside. Enabled forwarding is unaffected, because DNAT in prerouting sends
-// those packets to the forward hook, never to input.
+// It stays loaded even when forwarding is off: the gateway then answers with nothing at
+// all instead of a reset, so the permanent FRITZ!Box rule looks like a blackhole from
+// outside. Enabled forwarding is unaffected, because DNAT in prerouting sends those
+// packets to the forward hook, never to input.
+//
+// While the forwarding is OFF the table gets a second chain in the raw hook, and that one
+// matters for more than tidiness. The input hook runs at priority 0, conntrack at
+// prerouting -200 - so a packet dropped in input has already been entered into the
+// conntrack table. With the FRITZ!Box rule standing permanently, anyone on the internet
+// can therefore create conntrack entries on the gateway at will, and a UDP flood with
+// changing source ports fills nf_conntrack_max. The raw hook sits at -300, ahead of
+// conntrack: the packet is discarded before any state is allocated for it.
+//
+// That chain cannot exist while forwarding is on - raw runs before dstnat, so it would
+// discard exactly the packets that are supposed to be translated. Hence the table has two
+// shapes, and Apply/Clear rebuild it on every state change.
 func RenderGuard(st config.State) (string, error) {
 	tcp, udp := len(st.TCPPorts) > 0, len(st.UDPPorts) > 0
 	if !tcp && !udp {
@@ -144,6 +158,23 @@ func RenderGuard(st config.State) (string, error) {
 	if udp {
 		b.WriteString(portSet("udp_ports", st.UDPPorts))
 	}
+	// Ahead of conntrack, only while nothing is being forwarded.
+	if !st.Enabled && st.GatewayIP != "" {
+		b.WriteString("\n\tchain prerouting {\n")
+		b.WriteString("\t\ttype filter hook prerouting priority raw; policy accept;\n")
+		if tcp {
+			fmt.Fprintf(&b, "\t\tip daddr %s tcp dport @tcp_ports counter drop comment \"%s\"\n",
+				st.GatewayIP, LabelRawTCP)
+		}
+		if udp {
+			fmt.Fprintf(&b, "\t\tip daddr %s udp dport @udp_ports counter drop comment \"%s\"\n",
+				st.GatewayIP, LabelRawUDP)
+		}
+		b.WriteString("\t}\n")
+	}
+
+	// Kept in both shapes: it also covers packets that arrive for an address the raw rule
+	// does not match, and it is the fallback if the raw chain could not be loaded.
 	b.WriteString("\n\tchain input {\n")
 	b.WriteString("\t\ttype filter hook input priority filter - 10; policy accept;\n")
 	if tcp {

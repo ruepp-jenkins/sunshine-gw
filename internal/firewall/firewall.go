@@ -71,6 +71,8 @@ func has(binary string) bool {
 // Apply loads the forwarding ruleset and opens the forward path through Docker's
 // FORWARD policy. The whole nft ruleset is replaced in one transaction.
 func (m *Manager) Apply(st config.State) error {
+	// Rebuilds the blackhole without its raw-hook chain first: that chain sits ahead of
+	// dstnat and would discard the very packets the DNAT rule below is meant to translate.
 	if err := m.ApplyGuard(st); err != nil {
 		return err
 	}
@@ -106,6 +108,16 @@ func (m *Manager) Clear(st config.State) error {
 	// Nothing was translated, so there is nothing to tear down either. Saves a handful
 	// of subprocesses on every settings change while the gateway is off.
 	wasLoaded := m.TableLoaded()
+
+	// The blackhole gains its raw-hook chain in the off state, so it is rebuilt first:
+	// dropping ahead of conntrack before the translation disappears keeps the order
+	// "more closed at every step", never the other way round.
+	off := st
+	off.Enabled = false
+	if err := m.ApplyGuard(off); err != nil {
+		m.log.Warnf("Blackhole-Tabelle konnte nicht auf den Aus-Zustand gebracht werden: %v", err)
+	}
+
 	ruleset := RenderDelete(TableName)
 	if res := m.run("nft", ruleset, "-f", "-"); res.err != nil {
 		return res.err

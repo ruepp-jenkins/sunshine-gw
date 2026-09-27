@@ -260,7 +260,15 @@ Zwei eigene nftables-Tabellen, die keine andere Firewall anfassen:
   * `forward` (filter, policy accept): erlaubt und zaehlt die Flows.
 * `inet sunshine_gw_guard` - immer geladen, verwirft die freigegebenen Ports am Gateway
   selbst. Bei eingeschalteter Weiterleitung stoert das nicht: DNAT im prerouting-Hook
-  schickt diese Pakete in den forward-Hook, nie in den input-Hook.
+  schickt diese Pakete in den forward-Hook, nie in den input-Hook. Die Tabelle hat zwei
+  Formen: **im Aus-Zustand** kommt eine Kette im `raw`-Hook dazu (Prioritaet -300), die vor
+  conntrack (-200) verwirft. Ohne sie legt jedes Paket aus dem Internet erst einen
+  conntrack-Eintrag an, bevor der input-Hook es wegwirft - bei dauerhaft stehender
+  FRITZ!Box-Freigabe kann so jeder von aussen Zustand im Gateway erzeugen und mit
+  wechselnden Quellports `nf_conntrack_max` fuellen. **Im Ein-Zustand** darf diese Kette
+  nicht existieren, weil `raw` vor `dstnat` laeuft und genau die Pakete verwerfen wuerde,
+  die uebersetzt werden sollen; bleibt sie versehentlich stehen, meldet die Pruefliste das
+  als Fehler.
 
 Angewendet wird immer das komplette gerenderte Ruleset in einer Transaktion
 (`table`/`delete table`/neu definieren), damit es keinen Zwischenzustand gibt.
@@ -293,7 +301,20 @@ docker compose exec sunshine-gw conntrack -L -d <GATEWAY_IP> 2>/dev/null | grep 
 nmap -Pn -p 47984,47989,48010 <WAN_IP>                                 # von aussen: filtered
 ```
 
-Was dabei ehrlich dazugehoert:
+Was dabei ehrlich dazugehoert - und was „aus" **nicht** heisst:
+
+* **Das Gateway empfaengt weiter.** Die Portfreigabe in der FRITZ!Box steht dauerhaft, also
+  treffen Pakete aus dem Internet weiter auf den Kernel des Gateways; sie werden verworfen,
+  aber sie kommen an. Dem Sunshine-Rechner kann nichts passieren, dem IP-Stack des Gateways
+  steht der Verkehr offen. Deshalb faellt die Entscheidung im Aus-Zustand so frueh wie
+  moeglich, im `raw`-Hook vor conntrack: kein Zustand, keine Policy-Auswertung, ein
+  Zaehler und weg. Ein Rest bleibt trotzdem - IP- und L4-Header werden geparst, bevor die
+  Regel greift. Nur ein Abschalten der Freigabe in der Box selbst waere wirklich nichts.
+* **„Aus" ist ein Software-Zustand, keine gezogene Leitung.** Wer das Web-Interface
+  erreicht und das Passwort hat, schaltet ein - oder wer root auf dem Gateway hat. Die
+  Zusage lautet „solange aus ist, wird nichts weitergeleitet", nicht „es kann nie wieder
+  weitergeleitet werden". Darum gehoert das UI an eine LAN-Adresse und hinter ein Passwort.
+
 
 * **Ports, die das Gateway nicht kennt.** Die Blackhole-Tabelle verwirft genau die
   konfigurierten Ports. Gibt die FRITZ!Box einen Port frei, der in der Portliste nicht
