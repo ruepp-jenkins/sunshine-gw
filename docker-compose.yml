@@ -4,7 +4,6 @@ services:
     # `build: .` stays for a local checkout: compose builds only when the image is missing,
     # or when asked with `docker compose up --build`.
     image: ruepp/sunshine-gw:latest
-    build: .
     container_name: sunshine-gw
     # The container shares the host's network stack: the FRITZ!Box port forward points
     # at this machine's LAN address, and the rules this process loads are the host's.
