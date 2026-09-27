@@ -265,6 +265,49 @@ Zwei eigene nftables-Tabellen, die keine andere Firewall anfassen:
 Angewendet wird immer das komplette gerenderte Ruleset in einer Transaktion
 (`table`/`delete table`/neu definieren), damit es keinen Zwischenzustand gibt.
 
+### Was der Aus-Zustand garantiert
+
+Dass im Aus-Zustand nichts weitergeleitet wird, ist keine Frage einer Regel, die alles
+abfaengt, sondern **strukturell**: ein Paket, das die FRITZ!Box weitergeleitet hat, kommt
+an die Adresse des Gateways adressiert an. Weiterleiten kann der Kernel nur, was *woanders*
+hin adressiert ist - und die einzige Stelle, die das Ziel umschreiben wuerde, ist die
+DNAT-Regel. Ist die Tabelle geloescht, gibt es diese Regel nicht, das Paket bleibt an das
+Gateway adressiert, geht damit in den input-Hook statt in den forward-Hook und wird dort
+von der Blackhole-Tabelle verworfen. Der forward-Hook wird gar nicht erreicht.
+
+Drei Dinge muessten also liegen bleiben, damit dieses Argument faellt, und genau die
+pruefte das Web-Interface im Aus-Zustand unter „Aus-Zustand":
+
+1. die Tabelle `inet sunshine_gw` (waere die DNAT-Regel),
+2. die Kette `SUNSHINE-GW` in `DOCKER-USER` (waere die Forward-Freigabe),
+3. conntrack-Eintraege auf den freigegebenen Ports (waeren laufende Streams, die
+   unabhaengig von den Regeln weiter uebersetzt wuerden).
+
+Alle drei werden beim Abschalten entfernt; steht trotzdem etwas davon, sagt die Pruefung
+das als Fehler, statt es zu verschweigen. Selbst nachsehen:
+
+```sh
+docker compose exec sunshine-gw nft list ruleset | grep -c dnat        # muss 0 sein
+docker compose exec sunshine-gw iptables -w 5 -S SUNSHINE-GW           # nur die Kette, keine Regeln
+docker compose exec sunshine-gw conntrack -L -d <GATEWAY_IP> 2>/dev/null | grep -E 'dport=(47984|47989|48010|4799[89]|4800[02])'
+nmap -Pn -p 47984,47989,48010 <WAN_IP>                                 # von aussen: filtered
+```
+
+Was dabei ehrlich dazugehoert:
+
+* **Ports, die das Gateway nicht kennt.** Die Blackhole-Tabelle verwirft genau die
+  konfigurierten Ports. Gibt die FRITZ!Box einen Port frei, der in der Portliste nicht
+  steht, wird er nicht weitergeleitet - aber der Kernel antwortet mit RST bzw. ICMP
+  unreachable, statt zu schweigen. Beide Listen gehoeren deshalb zusammen gepflegt.
+* **ip_forward bleibt an**, das Gateway ist weiter ein Router fuer das LAN. Von aussen
+  nutzt das nichts, weil die FRITZ!Box nur Pakete an die Gateway-Adresse hereingibt; ein
+  LAN-Geraet koennte darueber routen, kaeme aber auch direkt an den Sunshine-Rechner.
+* **Ein hart abgeschossener Container.** Bei `docker compose down` oder `stop` raeumt das
+  Gateway die Regeln selbst weg (SIGTERM). Bei SIGKILL oder Stromausfall bleiben sie
+  geladen, und niemand haelt dann die taegliche Abschaltzeit ein - bis `restart:
+  unless-stopped` den Container zurueckbringt. Ein Reboot loescht das Regelwerk ohnehin,
+  nftables ist nicht persistent.
+
 **Docker setzt die iptables-FORWARD-Policy auf DROP.** Ein `accept` in einer eigenen
 nft-Tabelle hebt das nicht auf: jede Tabelle wird fuer den Hook ausgewertet, und ein
 einziges `drop` gewinnt. Deshalb pflegt das Gateway zusaetzlich eine Kette

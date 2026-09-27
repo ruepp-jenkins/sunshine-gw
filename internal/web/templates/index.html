@@ -61,12 +61,23 @@
     <div><span class="legend up"></span>Hoch <strong id="rate-up">&ndash;</strong></div>
     <div class="muted" id="chart-scale"></div>
   </div>
-  <svg id="chart" class="chart" viewBox="0 0 600 140" preserveAspectRatio="none"
-       role="img" aria-label="Durchsatz der letzten Minuten">
-    <path id="chart-down" class="area down" d=""></path>
-    <path id="chart-up" class="area up" d=""></path>
-  </svg>
-  <div class="chart-axis"><span id="chart-span">&nbsp;</span><span>jetzt</span></div>
+  <div class="chart-wrap">
+    <div class="chart-y">
+      <span class="unit">Mbit/s</span>
+      <div class="ticks" id="chart-y"></div>
+    </div>
+    <div class="chart-plot">
+      <!-- Das SVG wird auf die Breite gestreckt (preserveAspectRatio="none"), deshalb steht
+           die Beschriftung als HTML daneben: Text im SVG waere mitverzerrt. Das Raster im
+           Hintergrund liegt auf denselben Vierteln wie die Ticks. -->
+      <svg id="chart" class="chart" viewBox="0 0 600 140" preserveAspectRatio="none"
+           role="img" aria-label="Durchsatz der letzten Minuten">
+        <path id="chart-down" class="area down" d=""></path>
+        <path id="chart-up" class="area up" d=""></path>
+      </svg>
+      <div class="chart-x" id="chart-x"></div>
+    </div>
+  </div>
   <p class="muted" id="chart-note">Gemessen werden die Zaehler der Forward-Kette, nicht die Pakete selbst
   &ndash; die Messung liegt neben dem Datenpfad und kann den Stream nicht bremsen.</p>
 </section>

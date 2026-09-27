@@ -41,6 +41,59 @@
     return Math.round(seconds / 60) + " min";
   }
 
+  // Obergrenze der Y-Achse: die naechste runde Zahl aus 1-2-4-5-10 mal Zehnerpotenz. Die
+  // Folge ist so gewaehlt, dass sie sich glatt vierteln laesst - das Raster hat vier
+  // Felder, und Beschriftungen wie 1,875 will niemand lesen. Skaliert wird auf die
+  // Spitze der *sichtbaren* Messreihe, die Achse folgt also dem, was gerade laeuft.
+  function niceMaxMbit(bytesPerSecond) {
+    var mbit = (bytesPerSecond || 0) * 8 / 1e6;
+    var floor = 0.25;
+    if (!(mbit > floor)) return floor;
+    var pow = Math.pow(10, Math.floor(Math.log10(mbit)));
+    var steps = [1, 2, 4, 5, 10];
+    for (var i = 0; i < steps.length; i++) {
+      if (mbit <= steps[i] * pow * (1 + 1e-9)) return steps[i] * pow;
+    }
+    return 10 * pow;
+  }
+
+  // Ticks ohne Einheit - die steht einmal ueber der Achse - und ohne ueberfluessige Nullen.
+  function tickLabel(mbit) {
+    return mbit.toFixed(2).replace(/\.?0+$/, "");
+  }
+
+  function renderYAxis(maxMbit) {
+    var box = document.getElementById("chart-y");
+    if (!box) return;
+    var ticks = [];
+    for (var i = 0; i <= 4; i++) {
+      var label = el("span", null, tickLabel(maxMbit * (1 - i / 4)));
+      label.style.top = (i * 25) + "%";
+      ticks.push(label);
+    }
+    box.replaceChildren.apply(box, ticks);
+  }
+
+  // Die Zeitachse kommt aus den Zeitstempeln der Messreihe, nicht aus der Fensterbreite:
+  // solange der Ringpuffer sich fuellt, deckt die Grafik weniger als eine halbe Stunde ab,
+  // und die Beschriftung sagt dann auch das.
+  function renderXAxis(samples) {
+    var box = document.getElementById("chart-x");
+    if (!box) return;
+    if (samples.length < 2) {
+      box.replaceChildren();
+      return;
+    }
+    var last = new Date(samples[samples.length - 1].t).getTime();
+    var labels = [];
+    for (var i = 0; i < 4; i++) {
+      var idx = Math.round((i / 3) * (samples.length - 1));
+      var age = (last - new Date(samples[idx].t).getTime()) / 1000;
+      labels.push(el("span", null, age < 3 ? "jetzt" : "vor " + minutes(age)));
+    }
+    box.replaceChildren.apply(box, labels);
+  }
+
   // One filled area per direction. The path is built in the SVG's own viewBox coordinates
   // and stretched by preserveAspectRatio="none", so no resize handling is needed.
   function area(samples, pick, max, w, h) {
@@ -57,26 +110,29 @@
   function renderChart(m) {
     var samples = m.samples || [];
     var w = 600, h = 140;
-    // A floor on the scale keeps an idle gateway from amplifying a few stray packets into
-    // a dramatic mountain range.
-    var floorBytes = 125000; // 1 Mbit/s
-    var max = Math.max(m.peakUp || 0, m.peakDown || 0, floorBytes);
+    var maxMbit = niceMaxMbit(Math.max(m.peakUp || 0, m.peakDown || 0));
+    var max = maxMbit * 125000; // Mbit/s -> Byte/s, damit Kurve und Achse dasselbe Mass haben
     var up = document.getElementById("chart-up");
     var down = document.getElementById("chart-down");
     if (up) up.setAttribute("d", area(samples, function (s) { return s.up; }, max, w, h));
     if (down) down.setAttribute("d", area(samples, function (s) { return s.down; }, max, w, h));
 
+    renderYAxis(maxMbit);
+    renderXAxis(samples);
+
     var last = samples.length ? samples[samples.length - 1] : null;
     set("rate-up", last ? mbits(last.up) : "–");
     set("rate-down", last ? mbits(last.down) : "–");
     set("chart-scale", samples.length
-      ? "Skala bis " + mbits(max) + " · Spitze runter " + mbits(m.peakDown || 0)
+      ? "Spitze runter " + mbits(m.peakDown || 0) + " · hoch " + mbits(m.peakUp || 0)
       : "sammelt Daten …");
-    var span = document.getElementById("chart-span");
-    if (span) {
-      span.textContent = samples.length > 1
-        ? "vor " + minutes((samples.length - 1) * (m.intervalSeconds || 5))
-        : "\u00a0";
+
+    var svg = document.getElementById("chart");
+    if (svg) {
+      svg.setAttribute("aria-label", last
+        ? "Durchsatz, aktuell runter " + mbits(last.down) + ", hoch " + mbits(last.up) +
+          ", Achse bis " + tickLabel(maxMbit) + " Mbit pro Sekunde"
+        : "Durchsatz, noch keine Messwerte");
     }
   }
 

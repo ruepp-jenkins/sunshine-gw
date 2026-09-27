@@ -2,7 +2,7 @@ BIN := gateway
 GO  := docker run --rm -v "$(CURDIR)":/src -w /src --user "$$(id -u):$$(id -g)" \
         -e HOME=/tmp -e GOCACHE=/tmp/gocache golang:1 go
 
-.PHONY: test vet build image up down logs restart selftest hash ruleset clean
+.PHONY: test vet build image up down logs restart selftest hash ruleset check-chart clean
 
 test:            ## Unit-Tests, wie in der CI mit Race-Detector
 	$(GO) test -race -count=1 ./...
@@ -27,6 +27,10 @@ restart:
 
 logs:
 	docker compose logs -f --tail=50
+
+check-chart:      ## Zeichenlogik der Durchsatz-Grafik pruefen (nicht Teil der CI)
+	docker run --rm -v "$(CURDIR)":/src -w /src --user "$$(id -u):$$(id -g)" \
+		node:22-alpine node scripts/check-chart.js
 
 selftest:         ## Voraussetzungen und Ruleset auf diesem Rechner pruefen
 	./scripts/selftest.sh

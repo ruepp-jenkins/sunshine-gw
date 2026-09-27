@@ -92,6 +92,12 @@ func (m *Manager) Health(st config.State) []Check {
 		add("Regelwerk", OK, "keine Weiterleitungsregeln geladen")
 	}
 
+	// When the forwarding is off, say so as a fact rather than as an assumption: no
+	// translation rule, no forward permission, no leftover connection.
+	if !st.Enabled {
+		checks = append(checks, offStateCheck(loaded, m.ForwardAcceptActive(), m.ActiveFlows(st)))
+	}
+
 	if m.guardLoaded() {
 		add("Blackhole", OK, "Tabelle inet %s verwirft die freigegebenen Ports am Gateway selbst", GuardTableName)
 	} else {
@@ -163,6 +169,39 @@ func parseForeignForwardDrops(jsonOut []byte) []string {
 // kernel - Docker's doing, and the subject of the FORWARD-Policy check.
 func isIptablesForward(c *nftChain) bool {
 	return (c.Family == "ip" || c.Family == "ip6") && c.Table == "filter" && c.Name == "FORWARD"
+}
+
+// offStateCheck reports whether the disabled state is really clean. Separated from the
+// commands so the verdict itself is testable.
+//
+// The reason the off state holds is structural, not a matter of one rule catching
+// everything: a packet the FRITZ!Box forwarded arrives addressed to the gateway, and only
+// a DNAT rule could turn it into a packet for somewhere else. With the table gone there is
+// no such rule, so the packet can only be delivered locally - where the blackhole chain
+// drops it - and never reaches the forward hook at all. The three things checked here are
+// what would have to be left behind for that argument to fail.
+func offStateCheck(tableLoaded, acceptActive bool, flows int) Check {
+	var residue []string
+	if tableLoaded {
+		residue = append(residue, fmt.Sprintf("die Tabelle inet %s ist noch geladen (DNAT moeglich)", TableName))
+	}
+	if acceptActive {
+		residue = append(residue, fmt.Sprintf("die Freigabekette %s ist noch gefuellt", iptChain))
+	}
+	if flows > 0 {
+		residue = append(residue, fmt.Sprintf("%d conntrack-Eintrag/-Eintraege auf den freigegebenen Ports", flows))
+	}
+	if len(residue) > 0 {
+		return Check{Name: "Aus-Zustand", Level: Error,
+			Message: "die Weiterleitung ist aus, aber es liegt noch etwas an: " + strings.Join(residue, "; ")}
+	}
+	msg := "keine DNAT-Regel, keine Forward-Freigabe, keine offenen Verbindungen - " +
+		"Pakete an die freigegebenen Ports werden verworfen"
+	if flows < 0 {
+		return Check{Name: "Aus-Zustand", Level: Warn,
+			Message: msg + " (offene Verbindungen nicht pruefbar, conntrack fehlt)"}
+	}
+	return Check{Name: "Aus-Zustand", Level: OK, Message: msg}
 }
 
 func (m *Manager) guardLoaded() bool {

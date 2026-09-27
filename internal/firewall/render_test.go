@@ -169,3 +169,50 @@ func TestParseForeignForwardDropsSurvivesGarbage(t *testing.T) {
 		t.Errorf("= %v, want nil", got)
 	}
 }
+
+// The off state is the security promise of the whole gateway, so it is stated as a fact in
+// the UI. This is the verdict behind that statement.
+func TestOffStateCheck(t *testing.T) {
+	clean := offStateCheck(false, false, 0)
+	if clean.Level != OK {
+		t.Errorf("sauberer Aus-Zustand = %s: %s", clean.Level, clean.Message)
+	}
+	if !strings.Contains(clean.Message, "verworfen") {
+		t.Errorf("Meldung sagt nicht, was passiert: %q", clean.Message)
+	}
+
+	// Jede einzelne Hinterlassenschaft muss auffallen - und benannt werden.
+	for _, tc := range []struct {
+		name         string
+		tableLoaded  bool
+		acceptActive bool
+		flows        int
+		wantIn       string
+	}{
+		{"Tabelle geladen", true, false, 0, "noch geladen"},
+		{"Freigabekette gefuellt", false, true, 0, "SUNSHINE-GW"},
+		{"offene Verbindung", false, false, 3, "3 conntrack"},
+	} {
+		got := offStateCheck(tc.tableLoaded, tc.acceptActive, tc.flows)
+		if got.Level != Error {
+			t.Errorf("%s: Level = %s, erwartet error", tc.name, got.Level)
+		}
+		if !strings.Contains(got.Message, tc.wantIn) {
+			t.Errorf("%s: Meldung nennt %q nicht: %s", tc.name, tc.wantIn, got.Message)
+		}
+	}
+
+	// Alles zusammen wird auch zusammen gemeldet, nicht nur das erste.
+	all := offStateCheck(true, true, 2)
+	for _, want := range []string{"noch geladen", "SUNSHINE-GW", "2 conntrack"} {
+		if !strings.Contains(all.Message, want) {
+			t.Errorf("Sammelmeldung ohne %q: %s", want, all.Message)
+		}
+	}
+
+	// conntrack nicht installiert: der Rest gilt weiter, aber die Aussage wird abgeschwaecht.
+	unknown := offStateCheck(false, false, -1)
+	if unknown.Level != Warn || !strings.Contains(unknown.Message, "conntrack fehlt") {
+		t.Errorf("unbekannte Flows = %s: %s", unknown.Level, unknown.Message)
+	}
+}

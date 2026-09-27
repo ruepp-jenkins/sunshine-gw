@@ -354,7 +354,11 @@ func TestStatusCarriesMetrics(t *testing.T) {
 
 	page := httptest.NewRecorder()
 	h.ServeHTTP(page, authed(t, http.MethodGet, "/", ""))
-	for _, want := range []string{"Durchsatz", "id=\"chart\"", "Clients", "id=\"clients\"", "/forget"} {
+	for _, want := range []string{
+		"Durchsatz", "id=\"chart\"", "Clients", "id=\"clients\"", "/forget",
+		// Achsen: Beschriftung liegt als HTML neben dem SVG, weil das SVG gestreckt wird
+		"id=\"chart-y\"", "id=\"chart-x\"", "Mbit/s",
+	} {
 		if !strings.Contains(page.Body.String(), want) {
 			t.Errorf("Seite enthaelt %q nicht", want)
 		}
