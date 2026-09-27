@@ -306,3 +306,45 @@ func TestGuardCheck(t *testing.T) {
 		}
 	}
 }
+
+// "Exclusively to the configured address" has to be stated by this gateway's own rules.
+// Without these two, a Sunshine port routed onwards to another host would only be stopped
+// by Docker's FORWARD policy - a default of a different component.
+func TestForwardChainDropsStrayDestinations(t *testing.T) {
+	out, err := RenderForward(testState())
+	if err != nil {
+		t.Fatalf("RenderForward: %v", err)
+	}
+	for _, want := range []string{
+		"ip daddr != 10.10.10.5 tcp dport @tcp_ports counter drop",
+		"ip daddr != 10.10.10.5 udp dport @udp_ports counter drop",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("Ruleset enthaelt %q nicht:\n%s", want, out)
+		}
+	}
+}
+
+// Die Reihenfolge ist hier keine Kosmetik: der Ephemeral-Port-Bereich (32768-60999)
+// enthaelt 47984-48010. Waehlt ein Client 47998 als Quellport, traegt die Antwort an ihn
+// dport=47998 - stuende die Verwerfen-Regel vor dem accept fuer die Rueckrichtung, wuerde
+// genau diese Antwort weggeworfen und der Stream des Clients bliebe haengen.
+func TestStrayDropComesAfterReplyAccept(t *testing.T) {
+	out, err := RenderForward(testState())
+	if err != nil {
+		t.Fatalf("RenderForward: %v", err)
+	}
+	reply := strings.Index(out, LabelFwdReply)
+	strayTCP := strings.Index(out, LabelStrayTCP)
+	strayUDP := strings.Index(out, LabelStrayUDP)
+	if reply < 0 || strayTCP < 0 || strayUDP < 0 {
+		t.Fatalf("Regeln fehlen:\n%s", out)
+	}
+	if reply > strayTCP || reply > strayUDP {
+		t.Error("accept fuer die Rueckrichtung muss vor den Verwerfen-Regeln stehen")
+	}
+	// Und die Hinrichtung muss vor beiden akzeptiert werden.
+	if fwd := strings.Index(out, LabelFwdUDP); fwd < 0 || fwd > strayUDP {
+		t.Error("accept fuer die Hinrichtung muss vor den Verwerfen-Regeln stehen")
+	}
+}

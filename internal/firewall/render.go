@@ -16,6 +16,8 @@ const (
 	LabelFwdTCP   = "fwd-tcp"
 	LabelFwdUDP   = "fwd-udp"
 	LabelFwdReply = "fwd-reply"
+	LabelStrayTCP = "fwd-stray-tcp"
+	LabelStrayUDP = "fwd-stray-udp"
 	LabelGuardTCP = "guard-tcp"
 	LabelGuardUDP = "guard-udp"
 	LabelRawTCP   = "guard-raw-tcp"
@@ -120,6 +122,26 @@ func RenderForward(st config.State) (string, error) {
 	// gateway forwards, which is what the bandwidth graph in the UI draws.
 	fmt.Fprintf(&b, "\t\tip saddr %s ct state established,related counter accept comment \"%s\"\n",
 		st.Target, LabelFwdReply)
+
+	// Everything on these ports goes to the configured address and nowhere else - said by
+	// this gateway's own rules rather than left to Docker's FORWARD policy, which is what
+	// would otherwise be the only thing stopping a Sunshine port from being routed onwards
+	// to some other host.
+	//
+	// The position is essential. These two must come AFTER the accepts above, because the
+	// ephemeral port range (32768-60999) contains 47984-48010: a client may legitimately
+	// pick 47998 as its source port, and the reply to it then carries dport=47998 with the
+	// client as destination. Placed first, this rule would discard exactly that reply. The
+	// accept for the reply direction wins beforehand, so what reaches here is only traffic
+	// on Sunshine ports headed somewhere the gateway was never told to serve.
+	if tcp {
+		fmt.Fprintf(&b, "\t\tip daddr != %s tcp dport @tcp_ports counter drop comment \"%s\"\n",
+			st.Target, LabelStrayTCP)
+	}
+	if udp {
+		fmt.Fprintf(&b, "\t\tip daddr != %s udp dport @udp_ports counter drop comment \"%s\"\n",
+			st.Target, LabelStrayUDP)
+	}
 	b.WriteString("\t}\n")
 
 	b.WriteString("}\n")

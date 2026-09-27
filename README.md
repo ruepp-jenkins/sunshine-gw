@@ -257,7 +257,14 @@ Zwei eigene nftables-Tabellen, die keine andere Firewall anfassen:
     ohne SNAT gingen die Antwortpakete am Gateway vorbei. Sunshine sieht externe
     Clients dadurch als Gateway-IP; Moonlight-Pairing laeuft ueber Client-Zertifikate,
     nicht ueber IP-Adressen.
-  * `forward` (filter, policy accept): erlaubt und zaehlt die Flows.
+  * `forward` (filter, policy accept): erlaubt und zaehlt die Flows - und verwirft am Ende
+    alles, was auf diesen Ports zu einer *anderen* Adresse als dem Ziel unterwegs ist.
+    Damit sagt das Gateway selbst „diese Ports gehen an diese Adresse und nirgendwo
+    sonst", statt sich dafuer auf Dockers FORWARD-Policy zu verlassen. Die Regel steht
+    hinter den accept-Regeln, und das ist kein Zufall: der Ephemeral-Port-Bereich
+    (32768-60999) enthaelt 47984-48010, ein Client darf also 47998 als Quellport waehlen -
+    die Antwort an ihn traegt dann `dport=47998`. Stuende die Verwerfen-Regel vorn, wuerde
+    genau diese Antwort weggeworfen.
 * `inet sunshine_gw_guard` - immer geladen, verwirft die freigegebenen Ports am Gateway
   selbst. Bei eingeschalteter Weiterleitung stoert das nicht: DNAT im prerouting-Hook
   schickt diese Pakete in den forward-Hook, nie in den input-Hook. Die Tabelle hat zwei
@@ -272,6 +279,38 @@ Zwei eigene nftables-Tabellen, die keine andere Firewall anfassen:
 
 Angewendet wird immer das komplette gerenderte Ruleset in einer Transaktion
 (`table`/`delete table`/neu definieren), damit es keinen Zwischenzustand gibt.
+
+### Was der Ein-Zustand garantiert
+
+Das Ziel steht als **Konstante** in der DNAT-Regel, gerendert aus der Konfigurationsdatei:
+
+```
+ip daddr <Gateway> ip saddr != <LAN> tcp dport @tcp_ports counter dnat ip to <Ziel>
+```
+
+Die Zieladresse ist damit keine Funktion des Pakets. nftables koennte das anders - ein
+`dnat to ... map { ... }` liesse das Paket sein Ziel mitbestimmen -, genau das gibt es hier
+nicht. Es gibt auch keinen conntrack-Helper im Spiel (die Sunshine-Ports sind keine
+Helper-Ports), also nichts, was aus dem Protokollinhalt heraus weitere Verbindungen oeffnen
+koennte. Fragmentierte Pakete werden von conntrack vor dem nat-Hook zusammengesetzt, der
+Port-Vergleich trifft also immer den echten Header.
+
+Was von aussen aendern koennte, wohin es geht, waere folglich nur: die Zieladresse in der
+Konfiguration. Die steht hinter dem Web-Interface - LAN-Adresse, Passwort, CSRF-Token - und
+das ist ueber die weitergeleiteten Ports nicht erreichbar, weil dort nichts lauscht und die
+Blackhole-Tabelle sie am Gateway verwirft.
+
+Zwei Dinge, die dazugehoeren:
+
+* **Andere Ports als die konfigurierten** werden nicht uebersetzt und erreichen das Ziel
+  nicht; sie landen im input-Hook des Gateways und werden dort verworfen.
+* **IPv6** wird nicht weitergeleitet: die DNAT-Regeln sind IPv4. Ein IPv6-Paket auf diesen
+  Ports faellt in den input-Hook, und die Blackhole-Kette dort ist nicht auf eine Familie
+  eingeschraenkt - sie verwirft es.
+* **Ein Geraet, das dieses Gateway als Router benutzt**, kann ueber es keinen *anderen*
+  Sunshine-Rechner erreichen; die Verwerfen-Regel im forward-Hook gilt fuer alle Ziele
+  ausser dem konfigurierten. Auf einer dedizierten Gateway-VM routet ohnehin nichts
+  hindurch.
 
 ### Was der Aus-Zustand garantiert
 
