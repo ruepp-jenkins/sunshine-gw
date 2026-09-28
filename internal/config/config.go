@@ -6,6 +6,8 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strings"
 	"time"
 )
@@ -132,6 +134,14 @@ func (s *State) MissedOff(now time.Time) bool {
 	return prev.After(s.EnabledAt)
 }
 
+// ifaceNameRe is the character class the kernel accepts for an interface name
+// (IFNAMSIZ, no whitespace or "/"), narrowed further to what actually occurs in
+// practice. Iface ends up unescaped inside an nftables script (RenderForward's
+// flowtable block), so this is not just cosmetic: anything outside this class
+// could close the `devices = { ... }` set early and inject arbitrary nft syntax
+// into a ruleset that gets applied with CAP_NET_ADMIN.
+var ifaceNameRe = regexp.MustCompile(`^[a-zA-Z0-9_.:-]{1,15}$`)
+
 func (s *State) Validate() error {
 	if s.Target != "" {
 		ip := net.ParseIP(s.Target)
@@ -162,6 +172,9 @@ func (s *State) Validate() error {
 		if _, _, err := net.ParseCIDR(s.LANCIDR); err != nil {
 			return fmt.Errorf("LAN-Netz %q ist kein CIDR (z.B. 10.10.10.0/24)", s.LANCIDR)
 		}
+	}
+	if s.Iface != "" && !ifaceNameRe.MatchString(s.Iface) {
+		return fmt.Errorf("Interface %q ist kein gueltiger Schnittstellenname", s.Iface)
 	}
 	if s.ExternalOnly && s.LANCIDR == "" {
 		return fmt.Errorf("\"nur externe Quellen\" braucht ein LAN-Netz")
@@ -302,6 +315,56 @@ func firstLANIface() (string, error) {
 		}
 	}
 	return "", fmt.Errorf("kein LAN-Interface gefunden")
+}
+
+// IfaceInfo is one network interface as offered in the settings dropdown: whether it is
+// administratively up, whether it currently has a link (cable plugged in, or associated
+// to an AP), and its IPv4 addresses - enough for a human to tell which one the FRITZ!Box
+// port forward actually points at.
+type IfaceInfo struct {
+	Name    string
+	Up      bool
+	Carrier bool
+	Addrs   []string
+}
+
+// ListInterfaces enumerates the host's interfaces for the settings page. Loopback is
+// skipped; everything else is included - which one is right is for the user to see and
+// decide, not for the docker/veth/... heuristic that firstLANIface uses to guess a default.
+func ListInterfaces() ([]IfaceInfo, error) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]IfaceInfo, 0, len(ifaces))
+	for _, ifi := range ifaces {
+		if ifi.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		info := IfaceInfo{Name: ifi.Name, Up: ifi.Flags&net.FlagUp != 0, Carrier: readCarrier(ifi.Name)}
+		if addrs, err := ifi.Addrs(); err == nil {
+			for _, a := range addrs {
+				if ipnet, ok := a.(*net.IPNet); ok && ipnet.IP.To4() != nil {
+					info.Addrs = append(info.Addrs, ipnet.IP.String())
+				}
+			}
+		}
+		out = append(out, info)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+
+// readCarrier reports whether the interface currently has a link. Read straight from
+// sysfs, same reasoning as defaultRouteIface reading /proc: no `ip` binary needed. A
+// missing or unreadable file - the normal case while the interface is administratively
+// down - counts as no carrier rather than an error.
+func readCarrier(name string) bool {
+	b, err := os.ReadFile("/sys/class/net/" + name + "/carrier")
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(b)) == "1"
 }
 
 func skipIface(name string) bool {

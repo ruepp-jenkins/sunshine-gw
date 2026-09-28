@@ -156,7 +156,14 @@
           <small>Hierauf zeigt die Portfreigabe der FRITZ!Box.</small>
         </label>
         <label>Interface
-          <input type="text" name="iface" value="{{.Status.Iface}}">
+          <select name="iface">
+            <option value="" {{if not .Status.Iface}}selected{{end}}>nicht gesetzt</option>
+            {{range .Status.Interfaces}}
+            <option value="{{.Name}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>
+            {{end}}
+          </select>
+          <small>Verbindungsstatus und IPv4-Adresse stehen dabei - die Schnittstelle mit der
+          Adresse aus "Eigene IP" ist die richtige.</small>
         </label>
         <label>LAN-Netz
           <input type="text" name="lanCIDR" value="{{.Status.LANCIDR}}" placeholder="10.10.10.0/24">

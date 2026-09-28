@@ -63,6 +63,9 @@ Regelwerk ohne laufenden Container ansehen (gibt beide Blackhole-Varianten aus):
 - `internal/scheduler` — taegliche Abschaltung, mit Nachholen beim Start.
 - `internal/metrics` — Sampler und Verlauf (`/data/metrics.json`).
 - `internal/web` — eine Seite, Basic Auth, CSRF, `/api/status`.
+- `internal/events` — Ringpuffer der letzten Vorkommnisse fuer die UI, gespiegelt nach
+  stderr; wird von den meisten anderen Paketen befuellt (`docker logs` und Web-Interface
+  erzaehlen damit dieselbe Geschichte).
 
 Zwei nftables-Tabellen: `inet sunshine_gw` (nat + forward, existiert nur im Ein-Zustand)
 und `inet sunshine_gw_guard` (immer geladen, verwirft die freigegebenen Ports am Gateway).

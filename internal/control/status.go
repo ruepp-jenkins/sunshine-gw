@@ -1,7 +1,9 @@
 package control
 
 import (
+	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ruepp-jenkins/sunshine-gw/internal/config"
@@ -34,6 +36,50 @@ type Status struct {
 	Worst        firewall.Level     `json:"worst"`
 	Events       []events.Event     `json:"events"`
 	Metrics      metrics.Snapshot   `json:"metrics"`
+	Interfaces   []IfaceOption      `json:"interfaces"`
+}
+
+// IfaceOption is one entry of the interface dropdown, already formatted: the settings
+// page shows connection state and IPv4 address so picking the one the FRITZ!Box forward
+// actually points at does not require a shell on the host.
+type IfaceOption struct {
+	Name     string `json:"name"`
+	Label    string `json:"label"`
+	Selected bool   `json:"selected"`
+}
+
+// ifaceOptions lists the host's interfaces for the dropdown, with the configured one
+// selected. If the configured interface no longer exists (renamed, unplugged card), it is
+// still offered as its own option - otherwise saving the form would silently switch the
+// interface out from under the user.
+func ifaceOptions(current string) []IfaceOption {
+	list, _ := config.ListInterfaces()
+	out := make([]IfaceOption, 0, len(list)+1)
+	found := false
+	for _, ifi := range list {
+		if ifi.Name == current {
+			found = true
+		}
+		out = append(out, IfaceOption{Name: ifi.Name, Label: ifaceLabel(ifi), Selected: ifi.Name == current})
+	}
+	if current != "" && !found {
+		out = append(out, IfaceOption{Name: current, Label: current + " (nicht gefunden)", Selected: true})
+	}
+	return out
+}
+
+func ifaceLabel(ifi config.IfaceInfo) string {
+	state := "aus"
+	switch {
+	case ifi.Carrier:
+		state = "verbunden"
+	case ifi.Up:
+		state = "kein Link"
+	}
+	if len(ifi.Addrs) == 0 {
+		return fmt.Sprintf("%s - %s", ifi.Name, state)
+	}
+	return fmt.Sprintf("%s - %s, %s", ifi.Name, state, strings.Join(ifi.Addrs, ", "))
 }
 
 func (c *Controller) invalidate() {
@@ -89,6 +135,7 @@ func buildStatus(st config.State, fw Firewall, log *events.Log) Status {
 		TableLoaded:  fw.TableLoaded(),
 		Counters:     fw.AllCounters(),
 		Events:       log.Recent(),
+		Interfaces:   ifaceOptions(st.Iface),
 	}
 	out.Checks = fw.Health(st)
 	out.Worst = firewall.WorstLevel(out.Checks)

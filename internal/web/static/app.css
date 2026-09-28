@@ -92,7 +92,7 @@ table.counters .r { text-align: right; }
 
 .settings { display: grid; gap: 1rem; }
 .settings label { display: block; font-weight: 600; font-size: .9rem; }
-.settings input[type=text], .settings input[type=time] {
+.settings input[type=text], .settings input[type=time], .settings select {
   width: 100%; margin-top: .3rem; padding: .5rem .6rem; font: inherit;
   border: 1px solid var(--line); border-radius: 7px; background: var(--bg); color: var(--text);
 }

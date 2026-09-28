@@ -126,6 +126,47 @@ func TestValidate(t *testing.T) {
 	}
 }
 
+// TestValidateRejectsIfaceInjection guards RenderForward's flowtable block: Iface lands
+// unescaped in an nftables script fed to `nft -f -` under CAP_NET_ADMIN, so anything
+// outside a real interface name's character class must be rejected before it is ever
+// persisted or rendered.
+func TestValidateRejectsIfaceInjection(t *testing.T) {
+	base := func() State {
+		st := Defaults()
+		st.Target = "10.10.10.5"
+		st.GatewayIP = "10.10.10.20"
+		st.LANCIDR = "10.10.10.0/24"
+		return st
+	}
+	for _, name := range []string{
+		"eth0 }; table inet pwn { chain in { type filter hook input priority -400; accept } } #",
+		"eth0}",
+		"eth0;reject",
+		"eth0 eth1",
+		"",
+	} {
+		st := base()
+		st.Iface = name
+		err := st.Validate()
+		if name == "" {
+			if err != nil {
+				t.Errorf("Iface %q (leer, kein Fast-Path-Feld gesetzt) wurde abgelehnt: %v", name, err)
+			}
+			continue
+		}
+		if err == nil {
+			t.Errorf("Iface %q wurde akzeptiert, sollte abgelehnt werden", name)
+		}
+	}
+	for _, name := range []string{"eth0", "enp3s0", "ens18", "wlan0", "br-lan.10"} {
+		st := base()
+		st.Iface = name
+		if err := st.Validate(); err != nil {
+			t.Errorf("gueltiger Interface-Name %q wurde abgelehnt: %v", name, err)
+		}
+	}
+}
+
 func TestSaveLoadRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")
