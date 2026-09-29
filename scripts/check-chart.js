@@ -17,12 +17,15 @@ function fakeEl(id) {
     appendChild(c) { this.children.push(c); },
     replaceChildren(...c) { this.children = c; },
     querySelector() { return fakeEl('q'); },
+    querySelectorAll() { return []; },
+    classList: { add() {}, remove() {} },
   };
 }
 global.document = {
   getElementById: (id) => (nodes[id] = nodes[id] || fakeEl(id)),
   createElement: (tag) => fakeEl(tag),
   querySelector: (sel) => (nodes[sel] = nodes[sel] || fakeEl(sel)),
+  querySelectorAll: () => [],
   addEventListener() {}, hidden: false,
 };
 global.setInterval = () => 0;

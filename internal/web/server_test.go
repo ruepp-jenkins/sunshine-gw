@@ -246,8 +246,11 @@ func TestToggleAndConfigRoundTrip(t *testing.T) {
 	if w.Code != http.StatusSeeOther {
 		t.Fatalf("Toggle = %d, Body: %s", w.Code, w.Body.String())
 	}
-	if loc := w.Header().Get("Location"); !strings.Contains(loc, "msg=") {
-		t.Errorf("Redirect ohne Meldung: %q", loc)
+	if loc := w.Header().Get("Location"); loc != "/" {
+		t.Errorf("Redirect nach %q, erwartet die nackte \"/\"", loc)
+	}
+	if c := flashCookie(t, w); c == nil {
+		t.Error("keine Rueckmeldung im Flash-Cookie")
 	}
 	stored, _ := config.Load(path)
 	if !stored.Enabled {
@@ -295,8 +298,16 @@ func TestConfigErrorIsReportedToUser(t *testing.T) {
 	if w.Code != http.StatusSeeOther {
 		t.Fatalf("Status = %d", w.Code)
 	}
-	if loc := w.Header().Get("Location"); !strings.Contains(loc, "err=") {
-		t.Errorf("Fehler wurde nicht an die Seite zurueckgegeben: %q", loc)
+	c := flashCookie(t, w)
+	if c == nil {
+		t.Fatal("Fehler wurde nicht an die Seite zurueckgegeben")
+	}
+	page := httptest.NewRecorder()
+	r := authed(t, http.MethodGet, "/", "")
+	r.AddCookie(c)
+	h.ServeHTTP(page, r)
+	if !strings.Contains(page.Body.String(), "flash err") {
+		t.Error("Fehlermeldung fehlt auf der Seite")
 	}
 }
 
@@ -396,5 +407,83 @@ func TestForgetClearsClientHistory(t *testing.T) {
 	}
 	if got := len(store.Snapshot().Clients); got != 0 {
 		t.Errorf("%d Clients nach dem Loeschen", got)
+	}
+}
+
+// flashCookie fischt das Rueckmeldungs-Cookie aus einer Antwort; nil, wenn keines gesetzt
+// wurde oder es geloescht wird.
+func flashCookie(t *testing.T, w *httptest.ResponseRecorder) *http.Cookie {
+	t.Helper()
+	for _, c := range (&http.Response{Header: w.Header()}).Cookies() {
+		if c.Name == flashCookieName && c.Value != "" {
+			return c
+		}
+	}
+	return nil
+}
+
+// Die Rueckmeldung ist eine Quittung, kein Zustand: sie steht nicht in der URL (ein
+// Lesezeichen soll keine alte Meldung konservieren) und ueberlebt genau ein Rendern -
+// wer die Seite neu laedt, um frische Zahlen zu sehen, soll nicht wieder "Weiterleitung
+// ist aktiv." lesen.
+func TestFlashIsShownOnceAndStaysOutOfTheURL(t *testing.T) {
+	_, h, _ := newTestServer(t)
+	token := csrfToken(t, h)
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, authed(t, http.MethodPost, "/toggle",
+		url.Values{"csrf": {token}, "enable": {"1"}}.Encode()))
+	if loc := w.Header().Get("Location"); strings.Contains(loc, "?") {
+		t.Errorf("Meldung haengt an der URL: %q", loc)
+	}
+	c := flashCookie(t, w)
+	if c == nil {
+		t.Fatal("keine Rueckmeldung im Flash-Cookie")
+	}
+	if !c.HttpOnly || c.Path != "/" || c.MaxAge <= 0 {
+		t.Errorf("Cookie-Attribute = %+v", c)
+	}
+
+	first := httptest.NewRecorder()
+	r := authed(t, http.MethodGet, "/", "")
+	r.AddCookie(c)
+	h.ServeHTTP(first, r)
+	if !strings.Contains(first.Body.String(), "Weiterleitung ist aktiv.") {
+		t.Fatal("Meldung fehlt beim ersten Laden")
+	}
+	// Dieselbe Antwort raeumt das Cookie wieder ab.
+	var cleared bool
+	for _, sc := range (&http.Response{Header: first.Header()}).Cookies() {
+		if sc.Name == flashCookieName && sc.MaxAge < 0 {
+			cleared = true
+		}
+	}
+	if !cleared {
+		t.Error("Flash-Cookie wurde beim Rendern nicht geloescht")
+	}
+
+	// Der Browser schickt es danach nicht mehr mit - die Seite ist sauber.
+	second := httptest.NewRecorder()
+	h.ServeHTTP(second, authed(t, http.MethodGet, "/", ""))
+	if strings.Contains(second.Body.String(), "Weiterleitung ist aktiv.") {
+		t.Error("Meldung steht beim Neuladen immer noch da")
+	}
+}
+
+// Das Cookie kommt vom Browser zurueck, also wird sein Inhalt wie Eingabe behandelt:
+// Muell faellt weg, statt in der Seite zu landen.
+func TestBrokenFlashCookieIsIgnored(t *testing.T) {
+	_, h, _ := newTestServer(t)
+	for _, value := range []string{"kein-punkt", "ok.@@@nichtbase64@@@", "ok.", "err."} {
+		w := httptest.NewRecorder()
+		r := authed(t, http.MethodGet, "/", "")
+		r.AddCookie(&http.Cookie{Name: flashCookieName, Value: value})
+		h.ServeHTTP(w, r)
+		if w.Code != http.StatusOK {
+			t.Errorf("%q -> Status %d", value, w.Code)
+		}
+		if strings.Contains(w.Body.String(), "class=\"flash") {
+			t.Errorf("%q wurde als Meldung gerendert", value)
+		}
 	}
 }

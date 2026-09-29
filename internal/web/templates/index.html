@@ -16,8 +16,10 @@
   </span>
 </header>
 
-{{if .Message}}<p class="flash ok">{{.Message}}</p>{{end}}
-{{if .Error}}<p class="flash err">{{.Error}}</p>{{end}}
+<div id="flash">
+  {{if .Message}}<p class="flash ok" data-autohide="1">{{.Message}}</p>{{end}}
+  {{if .Error}}<p class="flash err">{{.Error}}</p>{{end}}
+</div>
 
 <section class="card">
   <div class="path">

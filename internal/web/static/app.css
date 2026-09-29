@@ -52,6 +52,11 @@ small { display: block; font-size: .8rem; font-weight: 400; margin-top: .25rem; 
 .flash { padding: .7rem .9rem; border-radius: 8px; margin: 0 0 1rem; border: 1px solid; }
 .flash.ok  { color: var(--ok);  border-color: var(--ok);  background: color-mix(in srgb, var(--ok) 10%, transparent); }
 .flash.err { color: var(--err); border-color: var(--err); background: color-mix(in srgb, var(--err) 10%, transparent); }
+/* Die Erfolgsmeldung blendet sich aus, statt zu verschwinden - ein Sprung im Layout
+   sieht aus wie ein Fehler. Ohne JS bleibt sie einfach bis zum naechsten Laden stehen. */
+.flash { transition: opacity .4s ease, transform .4s ease; }
+.flash.gone { opacity: 0; transform: translateY(-4px); }
+@media (prefers-reduced-motion: reduce) { .flash { transition: none; } }
 
 .path { display: flex; align-items: stretch; gap: .5rem; flex-wrap: wrap; margin-bottom: 1.1rem; }
 .hop {

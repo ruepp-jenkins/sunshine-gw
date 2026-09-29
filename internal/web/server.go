@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
-	"net/url"
 	"time"
 
 	"github.com/ruepp-jenkins/sunshine-gw/internal/control"
@@ -96,11 +95,12 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	msg, errMsg := takeFlash(w, r)
 	data := pageData{
 		Status:  s.ctrl.Status(),
 		CSRF:    s.csrf,
-		Message: r.URL.Query().Get("msg"),
-		Error:   r.URL.Query().Get("err"),
+		Message: msg,
+		Error:   errMsg,
 		Version: s.Version,
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -188,19 +188,11 @@ func (s *Server) checkPost(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
+// redirect ends every POST the same way: message into the one-shot cookie, then back to
+// the bare "/" - see flash.go for why the message no longer rides along in the URL.
 func (s *Server) redirect(w http.ResponseWriter, r *http.Request, msg, errMsg string) {
-	q := url.Values{}
-	if msg != "" {
-		q.Set("msg", msg)
-	}
-	if errMsg != "" {
-		q.Set("err", errMsg)
-	}
-	target := "/"
-	if len(q) > 0 {
-		target += "?" + q.Encode()
-	}
-	http.Redirect(w, r, target, http.StatusSeeOther)
+	setFlash(w, msg, errMsg)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 // HTTPServer builds the server; the caller owns its lifetime so it can shut down

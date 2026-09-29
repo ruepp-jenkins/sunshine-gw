@@ -250,6 +250,23 @@
     renderToggle(s);
   }
 
+  // Die Quittung nach einem Klick ist eine Meldung, kein Zustand: sie kommt aus einem
+  // Einmal-Cookie (siehe flash.go), steht also ohnehin nur bei genau einem Rendern in der
+  // Seite. Hier blendet sie sich zusaetzlich nach ein paar Sekunden aus, damit sie nicht
+  // ueber einer laufenden Messung stehen bleibt. Fehlermeldungen bleiben - die will man
+  // in Ruhe lesen; sie sind beim naechsten Laden von selbst weg.
+  function autohideFlash() {
+    var notes = document.querySelectorAll("#flash .flash[data-autohide]");
+    Array.prototype.forEach.call(notes, function (n) {
+      setTimeout(function () {
+        n.classList.add("gone");
+        setTimeout(function () {
+          if (n.parentNode) n.parentNode.removeChild(n);
+        }, 500);
+      }, 6000);
+    });
+  }
+
   function poll() {
     fetch("/api/status", { credentials: "same-origin", cache: "no-store" })
       .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
@@ -257,6 +274,7 @@
       .catch(function () { /* keep the last good picture */ });
   }
 
+  autohideFlash();
   setInterval(poll, 2000);
   document.addEventListener("visibilitychange", function () {
     if (!document.hidden) poll();
